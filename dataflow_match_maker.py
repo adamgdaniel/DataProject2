@@ -1,7 +1,8 @@
 # A. Apache Beam Libraries
+from re import match
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions, SetupOptions
-from apache_beam.transforms.window import Sessions, SlidingWindows
+from apache_beam.transforms.window import FixedWindows
 from apache_beam.utils.timestamp import Timestamp
 
 # B. Google Cloud Libraries
@@ -13,6 +14,7 @@ import logging
 import uuid
 import json
 from geopy.distance import geodesic
+import datetime
 
 """ Code: Helpful functions """
 
@@ -54,27 +56,36 @@ def normalizeAgresores(event):
         "type": "agresor",
     }
 
-def calcularDistancia(match):
-    coord_victima = match["coordenadas_victima"]
-    coord_agresor = match["coordenadas_agresor"]
+def calcularDistancia(elemento):
+    pareja_id = elemento[0]  
+    personas   = elemento[1]
 
-    distancia = geodesic(coord_victima, coord_agresor).meters
+    agresor = None
+    victima = None
+    for persona in personas:
+        if persona['type'] == 'agresor': agresor = persona
+        elif persona['type'] == 'victima': victima = persona
 
-    print(f"La distancia es: {distancia} metros")
 
-    if distancia < 500:
-        print("¡ALERTA! RIESGO DETECTADO")
-
-        return {
-            "id_victima": match["id_victima"],
-            "id_agresor": match["id_agresor"],
-            "coordenadas_victima": match["coordenadas_victima"],
-            "coordenadas_agresor": match["coordenadas_agresor"],
-            "distancia": distancia,
-            "timestamp": match["timestamp"],
-            "pareja_id": match["pareja_id"],
+    if agresor and victima:
+            dist = geodesic(agresor['coordinates'], victima['coordinates']).meters
+            if dist < 500:
+                print(f"ALERTA en pareja_id: {pareja_id}. La distancia es: {dist} metros")
+                yield {
+            "id_victima": victima["user_id"],
+            "id_agresor": agresor["user_id"],
+            "coordenadas_victima": victima["coordinates"],
+            "coordenadas_agresor": agresor["coordinates"],
+            "distancia": dist,
+            "timestamp": victima["timestamp"],
+            "pareja_id": pareja_id,
             "type": "alerta",
         }
+
+            
+
+
+
 
 # class FormatFirestoreDocument(beam.DoFn):
 
@@ -181,12 +192,12 @@ def run():
         match = (
             everyone
                 | "WindowIntoSessions" >> beam.WindowInto(FixedWindows(size=60))
-                | "KeyByUserId" >> beam.Map(lambda x: (x["user_id"], x))
-                | "GroupByUserId" >> beam.GroupByKey()
-                | "CalcularDistancia" >> beam.ParDo(calcularDistancia())
-                | "FilterAlertas" >> #TO DO: Filtrar solo las alertas que cumplen con la condición de distancia
-        )
+                | "KeyBypareja_id" >> beam.Map(lambda x: (x["pareja_id"], x))
+                | "GroupByParejaId" >> beam.GroupByKey()
+                | "CalcularDistancia" >> beam.FlatMap(calcularDistancia)
 
+        )
+        match | "LogFinal" >> beam.Map(lambda x: logging.info(f"MATCH CONFIRMADO: {x}"))
 
 
 if __name__ == '__main__':
