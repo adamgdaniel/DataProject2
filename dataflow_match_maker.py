@@ -12,6 +12,7 @@ import argparse
 import logging
 import uuid
 import json
+from geopy.distance import geodesic
 
 """ Code: Helpful functions """
 
@@ -33,49 +34,66 @@ def parsePubSubMessage(message):
     return message_dict
 
 
-
-def normalizeQualityEvent(event):
-
-    """
-    Normalize quality event data.
-    Args:
-        event (dict): Raw quality event data.
-    Returns:
-        dict: Normalized quality event data.
-    """
-
-    w = {
-        "BUFFERING_START": -1, 
-        "BUFFERING_END": -0.2, 
-        "DROPOUT": -2
-    }.get(event["event_type"], 0)
-    
+def normalizeVictimas(event):
+   
     return {
         "user_id": event["user_id"],
-        "episode_id": event["episode_id"],
-        "type": event["event_type"].lower(),
-        "w": w,
+        "coordinates": event["coordinates"],
+        "timestamp": event["timestamp"],
+        "pareja_id": event["pareja_id"],
+        "type": "victima",
     }
 
+def normalizeAgresores(event):
+  
+    return {
+        "user_id": event["user_id"],
+        "coordinates": event["coordinates"],
+        "timestamp": event["timestamp"],
+        "pareja_id": event["pareja_id"],
+        "type": "agresor",
+    }
 
-class FormatFirestoreDocument(beam.DoFn):
+def calcularDistancia(match):
+    coord_victima = match["coordenadas_victima"]
+    coord_agresor = match["coordenadas_agresor"]
 
-    def __init__(self,firestore_collection, project_id):
-        self.firestore_collection = firestore_collection
-        self.project_id = project_id
+    distancia = geodesic(coord_victima, coord_agresor).meters
 
-    def setup(self):
-        from google.cloud import firestore
-        self.db = firestore.Client(project=self.project_id)
+    print(f"La distancia es: {distancia} metros")
 
-    def process(self, element):
+    if distancia < 500:
+        print("¡ALERTA! RIESGO DETECTADO")
 
-        doc_ref = self.db.collection(self.firestore_collection).document(element['user_id']).collection('notifications').document(element['notification_id'])
-        doc_ref.set(element)
+        return {
+            "id_victima": match["id_victima"],
+            "id_agresor": match["id_agresor"],
+            "coordenadas_victima": match["coordenadas_victima"],
+            "coordenadas_agresor": match["coordenadas_agresor"],
+            "distancia": distancia,
+            "timestamp": match["timestamp"],
+            "pareja_id": match["pareja_id"],
+            "type": "alerta",
+        }
 
-        logging.info(f"Document written to Firestore: {doc_ref.id}")
+# class FormatFirestoreDocument(beam.DoFn):
 
-        yield element
+#     def __init__(self,firestore_collection, project_id):
+#         self.firestore_collection = firestore_collection
+#         self.project_id = project_id
+
+#     def setup(self):
+#         from google.cloud import firestore
+#         self.db = firestore.Client(project=self.project_id)
+
+#     def process(self, element):
+
+#         doc_ref = self.db.collection(self.firestore_collection).document(element['user_id']).collection('notifications').document(element['notification_id'])
+#         doc_ref.set(element)
+
+#         logging.info(f"Document written to Firestore: {doc_ref.id}")
+
+#         yield element
 
 """ Code: Dataflow Process """
 
@@ -103,22 +121,22 @@ def run():
 
     parser.add_argument(
                 '--policia_pubsub_topic_name',
-                required=True,
+                required=False,
                 help='Pub/Sub topic para mandar notificaciones a la Policía.')
     
     parser.add_argument(
                 '--firestore_collection',
-                required=True,
+                required=False,
                 help='Firestore collection name.')
     
     parser.add_argument(
                 '--bigquery_dataset',
-                required=True,
+                required=False,
                 help='BigQuery dataset para ingestar matches.')
     
     parser.add_argument(
                 '--user_bigquery_table',
-                required=True,
+                required=False,
                 help='Nombre de la tabla de BQ para ingestar matches.')
     
     
@@ -139,6 +157,7 @@ def run():
                 | "ReadFromAgresores" >> beam.io.ReadFromPubSub(
                     subscription=f"projects/{args.project_id}/subscriptions/{args.agresores_pubsub_subscription_name}")
                 | "ParseAgresoresMessages" >> beam.Map(parsePubSubMessage)
+                | "NormalizeAgresoresEvents" >> beam.Map(normalizeAgresores)
         )
 
         leer_victimas = (
@@ -146,71 +165,29 @@ def run():
                 | "ReadFromVictimas" >> beam.io.ReadFromPubSub(
                     subscription=f"projects/{args.project_id}/subscriptions/{args.victimas_pubsub_subscription_name}")
                 | "ParseVictimasMessages" >> beam.Map(parsePubSubMessage)
+                | "NormalizeVictimasEvents" >> beam.Map(normalizeVictimas)
         )
 
-        leer_safeplaces = (
-            p
-                | "ReadFromFirestore" >> beam.io.ReadFromFirestore(
-                    subscription=f"projects/{args.project_id}/subscriptions/{args.quality_pubsub_subscription_name}")
-                | "ParseQualityMessages" >> beam.Map(parsePubSubMessage)
-                | "NormalizeQualityEvents" >> beam.Map(normalizeQualityEvent)
-        )
+        # leer_safeplaces = (
+        #     p
+        #         | "ReadFromFirestore" >> beam.io.ReadFromFirestore(
+        #         | "ParseQualityMessages" >> 
+        #         | "NormalizeQualityEvents" >> 
+        # )
 
-        all_events = (leer_victimas, leer_agresores, leer_safeplaces) | "MergeEvents" >> beam.Flatten()
+        everyone = (leer_victimas, leer_agresores) | "MergeVictimasAgresores" >> beam.Flatten()
 
-        # A. User real-time metrics (Session-based)
-        user_data = (
-            all_events
-                | "WindowIntoSessions" >> beam.WindowInto(Sessions(gap_size=30))
+        # A. User real-time metrics (Fixed window)
+        match = (
+            everyone
+                | "WindowIntoSessions" >> beam.WindowInto(FixedWindows(size=60))
                 | "KeyByUserId" >> beam.Map(lambda x: (x["user_id"], x))
                 | "GroupByUserId" >> beam.GroupByKey()
-                | "ComputeUserMetrics" >> beam.ParDo(UserMetricsFn()).with_outputs(UserMetricsFn.METRICS, UserMetricsFn.NOTIFY)
+                | "CalcularDistancia" >> beam.ParDo(calcularDistancia())
+                | "FilterAlertas" >> #TO DO: Filtrar solo las alertas que cumplen con la condición de distancia
         )
 
-        (
-            user_data.metrics
-                | "WriteUserMetricsToBigQuery" >> beam.io.WriteToBigQuery(
-                        project=args.project_id,
-                        dataset=args.bigquery_dataset,
-                        table=args.user_bigquery_table,
-                        schema='user_id:STRING, window_start:TIMESTAMP, window_end:TIMESTAMP, plays:INTEGER, completes:INTEGER, score:FLOAT',
-                        write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
-                        create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
-                    )
-        )
 
-        (
-            user_data.notify
-                | "WriteToFirestore" >> beam.ParDo(FormatFirestoreDocument(firestore_collection=args.firestore_collection, project_id=args.project_id))
-        )
-
-        (
-            user_data.notify
-                | "EncodeUserNotifications" >> beam.Map(lambda x: json.dumps(x).encode('utf-8'))
-                | "WriteUserNotificationsToPubSub" >> beam.io.WriteToPubSub(
-                    topic=f"projects/{args.project_id}/topics/{args.notifications_pubsub_topic_name}"
-                )
-        )
-
-        # B. Content real-time metrics (Sliding window-based)
-        content_data = (
-            all_events
-                | "WindowIntoSliding" >> beam.WindowInto(SlidingWindows(size=60, period=10))
-                | "KeyByEpisodeId" >> beam.Map(lambda x: (x["episode_id"], x))
-                | "GroupByEpisodeId" >> beam.GroupByKey()
-                | "ComputeContentMetrics" >> beam.ParDo(ContentMetricsFn()).with_outputs(ContentMetricsFn.METRICS, ContentMetricsFn.NOTIFY)
-        )
-          
-        (content_data.metrics 
-                | "WriteToBigQuery" >> beam.io.WriteToBigQuery(
-                        project=args.project_id,
-                        dataset=args.bigquery_dataset,
-                        table=args.episode_bigquery_table,
-                        schema='episode_id:STRING, window_start:TIMESTAMP, window_end:TIMESTAMP, plays:INTEGER, completes:INTEGER, score:FLOAT',
-                        write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
-                        create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
-                    )
-        )
 
 if __name__ == '__main__':
 
