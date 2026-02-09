@@ -9,20 +9,20 @@ resource "postgresql_table" "victimas" {
 
   column {
     name     = "id_victima"
-    type     = "varchar(50)" # IDs tipo "VIC_01"
+    type     = "varchar" # IDs tipo "VIC_01"
     nullable = false
   }
   column {
     name     = "nombre_victima"
-    type     = "varchar(100)"
+    type     = "varchar"
   }
   column {
     name     = "apellido_victima"
-    type     = "varchar(100)"
+    type     = "varchar"
   }
   column {
     name     = "url_foto_victima"
-    type     = "varchar(255)"
+    type     = "varchar"
   }
 
   primary_key {
@@ -37,20 +37,20 @@ resource "postgresql_table" "agresores" {
 
   column {
     name     = "id_agresor"
-    type     = "varchar(50)" # IDs tipo "AGR_01"
+    type     = "varchar" # IDs tipo "AGR_01"
     nullable = false
   }
   column {
     name     = "nombre_agresor"
-    type     = "varchar(100)"
+    type     = "varchar"
   }
   column {
     name     = "apellido_agresor"
-    type     = "varchar(100)"
+    type     = "varchar"
   }
   column {
     name     = "url_foto_agresor"
-    type     = "varchar(255)"
+    type     = "varchar"
   }
 
   primary_key {
@@ -65,12 +65,12 @@ resource "postgresql_table" "safe_places" {
 
   column {
     name     = "id_place"
-    type     = "varchar(50)"
+    type     = "varchar"
     nullable = false
   }
   column {
     name     = "place_coordinates"
-    type     = "varchar(100)" # Ej: "39.4699,-0.3763"
+    type     = "varchar" # Ej: "39.4699,-0.3763"
   }
   column {
     name     = "radius"
@@ -94,12 +94,12 @@ resource "postgresql_table" "rel_victimas_agresores" {
 
   column {
     name     = "id_agresor"
-    type     = "varchar(50)"
+    type     = "varchar"
     nullable = false
   }
   column {
     name     = "id_victima"
-    type     = "varchar(50)"
+    type     = "varchar"
     nullable = false
   }
   column {
@@ -136,12 +136,12 @@ resource "postgresql_table" "rel_places_agresores" {
 
   column {
     name     = "id_agresor"
-    type     = "varchar(50)"
+    type     = "varchar"
     nullable = false
   }
   column {
     name     = "id_place"
-    type     = "varchar(50)"
+    type     = "varchar"
     nullable = false
   }
 
@@ -172,12 +172,12 @@ resource "postgresql_table" "rel_places_victimas" {
 
   column {
     name     = "id_victima"
-    type     = "varchar(50)"
+    type     = "varchar"
     nullable = false
   }
   column {
     name     = "id_place"
-    type     = "varchar(50)"
+    type     = "varchar"
     nullable = false
   }
 

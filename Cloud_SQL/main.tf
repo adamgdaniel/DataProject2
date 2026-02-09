@@ -28,7 +28,7 @@ resource "google_sql_database" "av_database" {
 
 # 3. El Usuario Admin
 resource "google_sql_user" "admin_user" {
-  name     = "terraform_admin"
+  name     = username_db_sql
   instance = google_sql_database_instance.av_instance.name
   password = pass_db_sql 
 }

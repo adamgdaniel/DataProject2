@@ -19,7 +19,7 @@ terraform {
 
 # 2. Configuración del Proveedor de Google
 provider "google" {
-  project = "data-project-streaming-486719" 
+  project = id_project 
   region  = "europe-west6"          
 }
 
