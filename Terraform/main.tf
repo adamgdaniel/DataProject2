@@ -1,3 +1,8 @@
+terraform {
+  backend "gcs" {
+    bucket  = "terraform-state-dataproject"
+  }
+}
 resource "google_pubsub_topic" "victimas_datos" {
     name = var.topic_victimas_datos
 }
@@ -38,7 +43,7 @@ resource "google_storage_bucket" "bucket_victimas_datos" {
     location = var.region
 }
 resource "google_firestore_database" "firestore_database" {
-    name = "(default)"
+    name = "firestore-database"
     location_id = var.region
     type = "FIRESTORE_NATIVE"
 }
