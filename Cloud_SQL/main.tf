@@ -3,7 +3,7 @@ resource "google_sql_database_instance" "av_instance" {
   name             = "av-instance-v1"
   database_version = "POSTGRES_14"
   region           = "europe-west6" 
-  deletion_protection = false       # CUIDADO: Solo para desarrollo
+  deletion_protection = true       # CUIDADO: Solo para desarrollo
 
   settings {
     tier = "db-f1-micro"
@@ -30,5 +30,5 @@ resource "google_sql_database" "av_database" {
 resource "google_sql_user" "admin_user" {
   name     = "terraform_admin"
   instance = google_sql_database_instance.av_instance.name
-  password = "admin123" 
+  password = pass_db_sql 
 }
