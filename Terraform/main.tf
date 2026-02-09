@@ -3,7 +3,6 @@ terraform {
     bucket  = "terraform-state-dataproject"
   }
 }
-
 resource "google_pubsub_topic" "victimas_datos" {
     name = var.topic_victimas_datos
 }
