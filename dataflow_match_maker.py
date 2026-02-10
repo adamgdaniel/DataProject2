@@ -77,7 +77,7 @@ def calcularDistancia(elemento):
             "coordenadas_victima": victima["coordinates"],
             "coordenadas_agresor": agresor["coordinates"],
             "distancia": dist,
-            "timestamp": victima["timestamp"],
+            "timestamp": agresor["timestamp"],
             "pareja_id": pareja_id,
             "type": "alerta",
         }
