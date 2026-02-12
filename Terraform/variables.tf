@@ -1,19 +1,16 @@
 variable "project_id"{
   description = "The ID of the project in which to create the resources."
   type = string
-  default = "data-project-streaming-486719"
 }
 
 variable "region"{
     description = "The region in which to create the resources."
     type = string
-    default = "europe-west6"
 }
 
 variable "zone"{
     description = "The zone in which to create the resources."
     type = string
-    default = "europe-west6-a"
 }
 
 variable "topic_victimas_datos"{
@@ -79,7 +76,7 @@ variable "subscription_agresores_alertas"{
 variable "bucket_imagenes"{
     description = "The name of the Cloud Storage bucket for images."
     type = string
-    default = "imagenes-agresores-victimas"
+    default = "imagenes-agresores-victimas2"
 }
 
 variable "analitical_dataset"{
