@@ -1,1 +1,4 @@
 geopy.distance
+pg8000
+SQLAlchemy
+cloud-sql-python-connector
