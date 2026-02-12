@@ -1,6 +1,6 @@
 terraform {
   backend "gcs" {
-    bucket  = "terraform-state-dataproject"
+    bucket  = "bucket-state-tf-dp2"
   }
 }
 resource "google_pubsub_topic" "victimas_datos" {
@@ -17,58 +17,162 @@ resource "google_pubsub_subscription" "agresores_datos_sub" {
     name = var.subscription_agresores_datos
     topic = google_pubsub_topic.agresores_datos.name
 }
-resource "google_pubsub_topic" "policia_alertas" {
-    name = var.topic_policia_alertas
-}
-resource "google_pubsub_subscription" "policia_alertas_sub" {
-    name = var.subscription_policia_alertas
-    topic = google_pubsub_topic.policia_alertas.name
-}
-resource "google_pubsub_topic" "victimas_alertas" {
-    name = var.topic_victimas_alertas
-}
-resource "google_pubsub_subscription" "victimas_alertas_sub" {
-    name = var.subscription_victimas_alertas
-    topic = google_pubsub_topic.victimas_alertas.name
-}
-resource "google_pubsub_topic" "agresores_alertas" {
-    name = var.topic_agresores_alertas
-}
-resource "google_pubsub_subscription" "agresores_alertas_sub" {
-    name = var.subscription_agresores_alertas
-    topic = google_pubsub_topic.agresores_alertas.name
-}
+# resource "google_pubsub_topic" "policia_alertas" {
+#     name = var.topic_policia_alertas
+# }
+# resource "google_pubsub_subscription" "policia_alertas_sub" {
+#     name = var.subscription_policia_alertas
+#     topic = google_pubsub_topic.policia_alertas.name
+# }
+# resource "google_pubsub_topic" "victimas_alertas" {
+#     name = var.topic_victimas_alertas
+# }
+# resource "google_pubsub_subscription" "victimas_alertas_sub" {
+#     name = var.subscription_victimas_alertas
+#     topic = google_pubsub_topic.victimas_alertas.name
+# }
+# resource "google_pubsub_topic" "agresores_alertas" {
+#     name = var.topic_agresores_alertas
+# }
+# resource "google_pubsub_subscription" "agresores_alertas_sub" {
+#     name = var.subscription_agresores_alertas
+#     topic = google_pubsub_topic.agresores_alertas.name
+# }
 resource "google_storage_bucket" "bucket_victimas_datos" {
     name = var.bucket_imagenes
     location = var.region
 }
 resource "google_firestore_database" "firestore_database" {
-    name = "firestore-database"
+    name = var.firestore_database
     location_id = var.region
     type = "FIRESTORE_NATIVE"
+    project = var.project_id
 }
-resource "google_firestore_document" "victimas_datos_doc" {
-    collection = var.firestore_collection_alertas
-    document_id = "init"
-    database = google_firestore_database.firestore_database.name
-    fields = jsonencode({
-        timestamp = {
-            string_value = "${formatdate("YYYY-MM-DD'T'hh:mm:ss.000Z", timestamp())}"
-        }
-    })
+resource "google_firestore_document" "doc_inicializacion" {
+  project     = var.project_id
+  database    = var.firestore_database
+  collection  = var.firestore_collection_alertas
+  document_id = "inicializacion_terraform" 
+  fields = jsonencode({
+    "id_victima": {
+      "stringValue": "dummy_victima_000"
+    },
+    "id_agresor": {
+      "stringValue": "dummy_agresor_000"
+    },
+    "distancia": {
+      "integerValue": "0"
+    },
+    "tipo_alerta": {
+      "stringValue": "inicializacion" # Para que no sea ni roja ni ámbar
+    },
+    "coordenadas_victima": {
+      "geoPointValue": {
+        "latitude": 40.4168,
+        "longitude": -3.7038
+      }
+    },
+    "coordenada_agresor": {
+      "geoPointValue": {
+        "latitude": 40.4168,
+        "longitude": -3.7038
+      }
+    }
+  })
 }
-resource "google_firestore_document" "agresores_datos_doc" {
-    collection = var.firestore_collection_safezones
-    document_id = "init"
-    database = google_firestore_database.firestore_database.name
-    fields = jsonencode({
-        timestamp = {
-            string_value = "${formatdate("YYYY-MM-DD'T'hh:mm:ss.000Z", timestamp())}"
-        }
-    })
-}
+
 resource "google_bigquery_dataset" "bigquery_dataset" {
     dataset_id = var.analitical_dataset
     project = var.project_id
     location = var.region
+}
+resource "google_sql_database_instance" "cloud_sql_instance" {
+    name = var.cloud_sql_instance_name
+    database_version = "POSTGRES_15"
+    region = var.region
+    deletion_protection = false
+    settings {
+        tier = "db-f1-micro"
+    }
+}
+resource "google_sql_database" "database"{
+    name = var.cloud_sql_instance_name
+    instance = google_sql_database_instance.cloud_sql_instance.name
+}
+resource "google_sql_user" "db_user" {
+    name = var.db_user
+    instance = google_sql_database_instance.cloud_sql_instance.name
+    password = var.db_password
+}
+resource "google_service_account" "cloud_run" {
+    account_id = "crear-tablas"
+    project = var.project_id
+    display_name = "Service account para Cloud run"
+}
+resource "google_project_iam_member" "cloud_run_roles" {
+    project = var.project_id
+    role = "roles/cloudsql.client"  
+    member = "serviceAccount:${google_service_account.cloud_run.email}"
+}
+
+# # Esperamos 30s para asegurar que Google ha propagado los permisos IAM
+# # antes de intentar ejecutar nada.
+# resource "time_sleep" "wait_for_iam" {
+#   depends_on = [google_project_iam_member.sql_client]
+#   create_duration = "30s"
+# }
+resource "google_cloud_run_v2_job" "crear_tablas" {
+    name = "crear-tablas"
+    location = var.region
+    deletion_protection = false
+    template {
+        template{
+            service_account = google_service_account.cloud_run.email
+            containers {
+                image = var.container_image
+                args = [
+                    var.db_user, var.db_password, google_sql_database.database.name, 
+                    google_sql_database_instance.cloud_sql_instance.connection_name
+                ]
+                volume_mounts {
+                  name = "cloudsql"
+                  mount_path = "/cloudsql"
+                }
+            }
+            volumes {
+                name = "cloudsql"
+                cloud_sql_instance {
+                    instances = [google_sql_database_instance.cloud_sql_instance.connection_name]
+                }
+            }
+        }
+    }
+    depends_on = [ google_project_iam_member.cloud_run_roles, google_sql_user.db_user ]
+}
+
+# resource "null_resource" "ejecutar_job" {
+#   # Solo se ejecutará si el Job se crea o cambia
+#   triggers = {
+#     job_id = google_cloud_run_v2_job.init_db_job.id
+#   }
+
+#   provisioner "local-exec" {
+#     # Este comando se ejecuta en tu máquina al hacer el apply
+#     # --wait asegura que Terraform no termine hasta que las tablas estén creadas
+#     command = "gcloud run jobs execute ${google_cloud_run_v2_job.init_db_job.name} --region ${var.region} --project ${var.project_id} --wait"
+#   }
+# }
+output "instrucciones_ejecucion" {
+  value = "Ejecuta: gcloud run jobs execute ${google_cloud_run_v2_job.crear_tablas.name} --region ${var.region}"
+}
+resource "google_artifact_registry_repository" "mi_repo" {
+  location      = var.region
+  repository_id = "repo-imagenes-proyecto"
+  description   = "Repositorio Docker para Cloud Run"
+  format        = "DOCKER"
+}
+
+# Output para que sepas la URL exacta donde subir tu imagen
+output "repository_url" {
+  value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.repository_id}"
 }
