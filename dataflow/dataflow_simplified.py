@@ -80,7 +80,7 @@ class EnriquecerConDatosDB(beam.DoFn):
 
     def start_bundle(self):
         self.conn = psycopg2.connect(
-            host=os.getenv("DB_HOST"), # ¡OJO! Añade esto a tu .env (IP pública de SQL)
+            host=os.getenv("DB_HOST"), 
             user=os.getenv("DB_USER"),
             password=os.getenv("DB_PASS"),
             dbname=os.getenv("DB_NAME")
@@ -124,23 +124,19 @@ def run():
 
     with beam.Pipeline(options=options) as p:
 
-        # RAMA 1: Procesar Víctimas
-        # Leemos -> Parseamos (Función) -> Consultamos DB (Clase)
         victimas = (
             p 
             | "LeerVictimas" >> beam.io.ReadFromPubSub(subscription=sub_v)
-            | "ParsearV" >> beam.Map(parsear_mensaje)
+            | "ParsearV" >> beam.Map(parsePubSubMessage)
+            | "FormatearV" >> beam.FlatMap(normalizeVictimas)
             | "BuscarEnDB" >> beam.ParDo(EnriquecerConDatosDB()) 
             # Salida: ('ag_001', {datos_victima})
         )
-
-        # RAMA 2: Procesar Agresores
-        # Leemos -> Parseamos (Función) -> Preparamos Clave (Función)
         agresores = (
             p 
             | "LeerAgresores" >> beam.io.ReadFromPubSub(subscription=sub_a)
-            | "ParsearA" >> beam.Map(parsear_mensaje)
-            | "FormatearA" >> beam.FlatMap(formatear_agresor)
+            | "ParsearA" >> beam.Map(parsePubSubMessage)
+            | "FormatearA" >> beam.FlatMap(normalizeAgresores)
             # Salida: ('ag_001', {datos_agresor})
         )
 

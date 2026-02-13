@@ -11,8 +11,8 @@ load_dotenv()
 PROJECT_ID = os.getenv("PROJECT_ID")
 
 # DEFINIMOS LOS TÓPICOS MANUALMENTE (según tus indicaciones)
-TOPIC_VICTIMAS = "victimas_datos"
-TOPIC_AGRESORES = "agresores_datos"
+TOPIC_VICTIMAS = "victimas-datos"
+TOPIC_AGRESORES = "agresores-datos"
 
 # Configurar el cliente de PubSub
 publisher = pubsub_v1.PublisherClient()
