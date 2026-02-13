@@ -115,12 +115,6 @@ resource "google_project_iam_member" "cloud_run_roles" {
     member = "serviceAccount:${google_service_account.cloud_run.email}"
 }
 
-# # Esperamos 30s para asegurar que Google ha propagado los permisos IAM
-# # antes de intentar ejecutar nada.
-# resource "time_sleep" "wait_for_iam" {
-#   depends_on = [google_project_iam_member.sql_client]
-#   create_duration = "30s"
-# }
 resource "google_cloud_run_v2_job" "crear_tablas" {
     name = "crear-tablas"
     location = var.region
@@ -147,6 +141,16 @@ resource "google_cloud_run_v2_job" "crear_tablas" {
             }
         }
     }
+    lifecycle {
+        ignore_changes = [
+            # Ignora cambios en la imagen (porque Cloud Build pondrá una nueva con cada commit)
+            template[0].template[0].containers[0].image,
+            
+            client,
+            client_version,
+            launch_stage
+        ]
+    }
     depends_on = [ google_project_iam_member.cloud_run_roles, google_sql_user.db_user ]
 }
 
@@ -162,17 +166,9 @@ resource "google_cloud_run_v2_job" "crear_tablas" {
 #     command = "gcloud run jobs execute ${google_cloud_run_v2_job.init_db_job.name} --region ${var.region} --project ${var.project_id} --wait"
 #   }
 # }
-output "instrucciones_ejecucion" {
-  value = "Ejecuta: gcloud run jobs execute ${google_cloud_run_v2_job.crear_tablas.name} --region ${var.region}"
-}
 resource "google_artifact_registry_repository" "mi_repo" {
   location      = var.region
   repository_id = "repo-imagenes-proyecto"
   description   = "Repositorio Docker para Cloud Run"
   format        = "DOCKER"
-}
-
-# Output para que sepas la URL exacta donde subir tu imagen
-output "repository_url" {
-  value = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.repository_id}"
 }

@@ -1,0 +1,36 @@
+steps:
+  # 1. Construir la imagen Docker usando el SHA del commit como etiqueta (versión única)
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'build', 
+      '-t', 'europe-west6-docker.pkg.dev/data-project-streaming-487217/repo-imagenes-proyecto/crear_tablas:$COMMIT_SHA', 
+      '.'
+    ]
+
+  # 2. Subir la imagen al Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: [
+      'push', 
+      'europe-west6-docker.pkg.dev/data-project-streaming-487217/repo-imagenes-proyecto/crear_tablas:$COMMIT_SHA'
+    ]
+
+  # 3. Actualizar el Cloud Run Job con la nueva imagen
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args: [
+      'run', 'jobs', 'update', 'crear-tablas',
+      '--image', 'europe-west6-docker.pkg.dev/data-project-streaming-487217/repo-imagenes-proyecto/crear_tablas:$COMMIT_SHA',
+      '--region', 'europe-west6'
+    ]
+
+  # 4. Ejecutar el Job inmediatamente para aplicar los cambios en la DB
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args: [
+      'run', 'jobs', 'execute', 'crear-tablas',
+      '--region', 'europe-west6',
+      '--wait' # Esperar a que termine para marcar el build como exitoso
+    ]
+
+options:
+  logging: CLOUD_LOGGING_ONLY
