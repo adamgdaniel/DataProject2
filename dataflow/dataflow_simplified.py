@@ -5,7 +5,7 @@ from apache_beam.transforms.window import FixedWindows
 import logging
 import json
 import os
-from geopy.distance import 
+from geopy.distance import geodesic
 import psycopg2 
 from dotenv import load_dotenv
 
@@ -110,9 +110,8 @@ class EnriquecerConDatosDB(beam.DoFn):
         # Cerrar conexión al terminar
         self.conn.close()
 
-# ==============================================================================
-#                               PIPELINE PRINCIPAL
-# ==============================================================================
+
+### PIPELINE
 
 def run():
     # Configuración estándar
