@@ -112,17 +112,6 @@ def run():
             CONSTRAINT fk_denuncia_vic FOREIGN KEY (id_victima) 
                 REFERENCES victimas(id_victima)
         );
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS rel_places_victimas222 (
-            id_victima VARCHAR(50) NOT NULL,
-            id_place VARCHAR(50) NOT NULL,
-            PRIMARY KEY (id_victima, id_place),
-            CONSTRAINT fk_rpv_victima FOREIGN KEY (id_victima) 
-                REFERENCES victimas(id_victima) ON DELETE CASCADE,
-            CONSTRAINT fk_rpv_place FOREIGN KEY (id_place) 
-                REFERENCES safe_places(id_place) ON DELETE CASCADE
-        );
         """
     ]
 
