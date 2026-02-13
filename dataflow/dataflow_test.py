@@ -1,13 +1,14 @@
+#usados
 import apache_beam as beam
-from apache_beam.options.pipeline_options import PipelineOptions, SetupOptions, StandardOptions
-from apache_beam.transforms.window import FixedWindows
-import logging
 import json
 import os
 from geopy.distance import geodesic
 from dotenv import load_dotenv
 
-# Librerías de Base de Datos
+# Cambiar
+from apache_beam.options.pipeline_options import PipelineOptions, SetupOptions, StandardOptions
+from apache_beam.transforms.window import FixedWindows
+import logging
 from google.cloud.sql.connector import Connector, IPTypes
 import sqlalchemy
 
