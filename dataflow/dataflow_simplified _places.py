@@ -122,39 +122,6 @@ def detectar_match(elemento):
 
 ### CLASES
 
-class EtiquetarVictimasConAgresores(beam.DoFn):
-
-    def start_bundle(self):
-        self.conn = psycopg2.connect(
-            host=os.getenv("DB_HOST"), 
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            dbname=os.getenv("DB_NAME")
-        )
-
-    def process(self, datos_victima):
-        if not datos_victima: return
-
-        # COnsulta a la BD quiénes son los agresores de esta víctima
-        cursor = self.conn.cursor()
-        vic_id = datos_victima['user_id']
-        query = f"SELECT id_agresor FROM rel_victimas_agresores WHERE id_victima = '{vic_id}'"
-        cursor.execute(query)
-        resultados = cursor.fetchall()
-        
-        #Etiqueta a la víctima con el ID de sus agresores
-        
-        if not resultados:
-            logging.info(f"La victima {datos_victima['user_id']} no tiene agresores en la BD")
-
-        for row in resultados:
-            id_agresor = row[0] #para pillar el id del agresor
-            yield (id_agresor, datos_victima)
-
-    def finish_bundle(self):
-        # Cerrar conexión al terminar
-        self.conn.close()
-
 class CargarDatosMaestros(beam.DoFn):
 
     def start_bundle(self):
@@ -232,40 +199,34 @@ def run():
                 help='Pub/Sub subscription for engagement events.')
     
     parser.add_argument(
-                '--alertas_policia_topic',
+                '--policia_pubsub_topic_name',
                 required=False,
                 default=os.getenv("TOPIC_POLICIA"),
                 help='Pub/Sub topic for police notifications.')
-    parser.add_argument(
-                '--alertas_agresores_topic',
-                required=False,
-                default=os.getenv("TOPIC_AGRESORES"),
-                help='Pub/Sub topic for agressor notifications.')
-    parser.add_argument(
-                '--alertas_victimas_topic',
-                required=False,
-                default=os.getenv("TOPIC_VICTIMAS"),
-                help='Pub/Sub topic for victim notifications.')
 
+    parser.add_argument(
+                '--notifications_pubsub_topic_name',
+                required=False,
+                help='Pub/Sub topic for push notifications.')
     
     parser.add_argument(
                 '--firestore_collection',
-                required=True,
+                required=False,
                 help='Firestore collection name.')
     
     parser.add_argument(
                 '--bigquery_dataset',
-                required=True,
+                required=False,
                 help='BigQuery dataset name.')
     
     parser.add_argument(
                 '--user_bigquery_table',
-                required=True,
+                required=False,
                 help='User BigQuery table name.')
     
     parser.add_argument(
                 '--episode_bigquery_table',
-                required=True,
+                required=False,
                 help='Episode BigQuery table name.')
     
     args, pipeline_opts = parser.parse_known_args()
