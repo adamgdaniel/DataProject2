@@ -56,32 +56,16 @@ def simular_match_fisico():
     print(f"😈 Agresor enviado: Voldemort (agr_001) en Ayuntamiento.")
 
 def simular_safe_place_intrusion():
-    """
-    ESCENARIO B: Vader entra en Safe Places (Hemisfèric y Mestalla).
-    No necesitamos enviar a la víctima, el sistema debe detectar que 
-    el agresor está en una zona prohibida de la BBDD.
-    """
     print("\n--- 🚨 SIMULANDO INTRUSIÓN EN SAFE PLACE ---")
     
-    # CASO 1: Vader en la "Estrella de la Muerte" (Hemisfèric - plc_003)
-    # Coordenadas exactas del SQL
-    lat_hemisferic = 39.4550
-    lon_hemisferic = -0.3505
+    # Usamos agr_001 porque es el ÚNICO que tiene relación con vic_001 en tu DB
+    # Lo mandamos a 'Callejón Diagon' (plc_002) que está en tu log de zonas
+    lat_zona = 39.470200
+    lon_zona = -0.376800
     
-    msg_a1 = generar_mensaje("agr_002", lat_hemisferic, lon_hemisferic)
-    publisher.publish(topic_path_a, msg_a1).result()
-    print(f"😈 Agresor enviado: Vader (agr_002) en SAFE PLACE (Hemisfèric/Estrella Muerte).")
-    
-    time.sleep(2)
-
-    # CASO 2: Vader en "Alderaan" (Mestalla - plc_005)
-    # Coordenadas exactas del SQL
-    lat_mestalla = 39.4800
-    lon_mestalla = -0.3400
-    
-    msg_a2 = generar_mensaje("agr_002", lat_mestalla, lon_mestalla)
-    publisher.publish(topic_path_a, msg_a2).result()
-    print(f"😈 Agresor enviado: Vader (agr_002) en SAFE PLACE (Mestalla/Alderaan).")
+    msg_a = generar_mensaje("agr_001", lat_zona, lon_zona)
+    publisher.publish(topic_path_a, msg_a).result()
+    print(f"😈 Agresor enviado: Voldemort (agr_001) invadiendo Callejón Diagon.")
 
 
 if __name__ == "__main__":
