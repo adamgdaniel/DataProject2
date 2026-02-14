@@ -1,6 +1,7 @@
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions
 from apache_beam.transforms.window import FixedWindows
+from apache_beam.transforms.periodicsequence import PeriodicImpulse
 from apache_beam.io import GenerateSequence
 import logging
 import json
@@ -44,6 +45,12 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
     if not datos_victima: return
     
     uid = datos_victima['user_id']
+
+    if uid in datos_maestros:
+        print(f"✅ DEBUG CRUCE: ¡{uid} encontrado! Agresores asociados: {datos_maestros[uid]['agresores']}")
+    else:
+        # Esto nos dirá si llega ' vi_001' en vez de 'vi_001'
+        print(f"❌ DEBUG CRUCE: {uid} NO está en datos_maestros. (Claves disponibles: {list(datos_maestros.keys())[:5]})")
     
     info = datos_maestros.get(uid)
     
@@ -60,6 +67,8 @@ def detectar_match(elemento):
     Devuelve: [alerta1, alerta2, ...] 
     """
     id_agresor, eventos = elemento
+
+    print(f"⚖️ DEBUG MATCH: Analizando ventana para Agresor {id_agresor}. Total eventos: {len(eventos)}") #########
     
     # Separar al agresor de las víctimas
     datos_agresor = None
@@ -96,64 +105,31 @@ def detectar_match(elemento):
                 print(f"🚨 JSON ALERTA GENERADO (FISICA): {alerta}")
             
     #matches de zona
-    for zona in vic.get('safe_zones', []):
-                
-                dist_zona = geodesic(datos_agresor['coordinates'], zona['place_coordinates']).meters
-                
-                if dist_zona < zona['radius']:
-                    alerta = {
-                        "alerta": "place",
-                        "nivel": "ALTO",
-                        "id_victima": vic['user_id'],
-                        "id_agresor": id_agresor,
-                        "id_place": zona['id_place'],
-                        "nombre_place": zona['place_name'], 
-                        "distancia_metros": round(dist_zona, 2),
-                        "radio_zona": zona['radius'],
-                        "coordenadas_agresor": datos_agresor['coordinates'],
-                        "coordenadas_place": zona['place_coordinates'],
-                        "timestamp": datos_agresor['timestamp']
-                    }
-                    alertas_json.append(alerta)
-                    print(f"🏰 JSON ALERTA GENERADO (Place): {alerta}") 
+        for zona in vic.get('safe_zones', []):
+                    
+                    dist_zona = geodesic(datos_agresor['coordinates'], zona['place_coordinates']).meters
+                    
+                    if dist_zona < zona['radius']:
+                        alerta = {
+                            "alerta": "place",
+                            "nivel": "ALTO",
+                            "id_victima": vic['user_id'],
+                            "id_agresor": id_agresor,
+                            "id_place": zona['id_place'],
+                            "nombre_place": zona['place_name'], 
+                            "distancia_metros": round(dist_zona, 2),
+                            "radio_zona": zona['radius'],
+                            "coordenadas_agresor": datos_agresor['coordinates'],
+                            "coordenadas_place": zona['place_coordinates'],
+                            "timestamp": datos_agresor['timestamp']
+                        }
+                        alertas_json.append(alerta)
+                        print(f"🏰 JSON ALERTA GENERADO (Place): {alerta}") 
             
     return alertas_json
 
 
 ### CLASES
-
-class EtiquetarVictimasConAgresores(beam.DoFn):
-
-    def start_bundle(self):
-        self.conn = psycopg2.connect(
-            host=os.getenv("DB_HOST"), 
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            dbname=os.getenv("DB_NAME")
-        )
-
-    def process(self, datos_victima):
-        if not datos_victima: return
-
-        # COnsulta a la BD quiénes son los agresores de esta víctima
-        cursor = self.conn.cursor()
-        vic_id = datos_victima['user_id']
-        query = f"SELECT id_agresor FROM rel_victimas_agresores WHERE id_victima = '{vic_id}'"
-        cursor.execute(query)
-        resultados = cursor.fetchall()
-        
-        #Etiqueta a la víctima con el ID de sus agresores
-        
-        if not resultados:
-            logging.info(f"La victima {datos_victima['user_id']} no tiene agresores en la BD")
-
-        for row in resultados:
-            id_agresor = row[0] #para pillar el id del agresor
-            yield (id_agresor, datos_victima)
-
-    def finish_bundle(self):
-        # Cerrar conexión al terminar
-        self.conn.close()
 
 class CargarDatosMaestros(beam.DoFn):
 
@@ -180,7 +156,7 @@ class CargarDatosMaestros(beam.DoFn):
         query_zonas = """
                     SELECT r.id_victima, s.place_name, s.place_coordinates, s.radius, s.id_place 
                     FROM safe_places s
-                    JOIN rel_victimas_places r ON s.id_place = r.id_place
+                    JOIN rel_places_victimas r ON s.id_place = r.id_place
                 """
         cursor.execute(query_zonas)
 
@@ -195,7 +171,12 @@ class CargarDatosMaestros(beam.DoFn):
                             "place_coordinates": row[2],
                             "radius": float(row[3])
                         })
-
+        print(f"📊 DEBUG DB: Cargados {len(datos_maestros)} usuarios maestros.")
+        if len(datos_maestros) > 0:
+            ejemplo_id = list(datos_maestros.keys())[0]
+            print(f"🔑 DEBUG CLAVE: Ejemplo de ID en memoria: '{ejemplo_id}' (Ojo a los espacios)")
+            print(f"🔗 DEBUG RELACIÓN: {datos_maestros[ejemplo_id]}")
+        
         yield datos_maestros
         # Estructira devuelta de datos_maestros:
         # { "vic_001": {
@@ -250,29 +231,29 @@ def run():
     
     parser.add_argument(
                 '--firestore_collection',
-                required=True,
+                required=False,
                 help='Firestore collection name.')
     
     parser.add_argument(
                 '--bigquery_dataset',
-                required=True,
+                required=False,
                 help='BigQuery dataset name.')
     
     parser.add_argument(
                 '--user_bigquery_table',
-                required=True,
+                required=False,
                 help='User BigQuery table name.')
     
     parser.add_argument(
                 '--episode_bigquery_table',
-                required=True,
+                required=False,
                 help='Episode BigQuery table name.')
     
     args, pipeline_opts = parser.parse_known_args()
 
 
     # Configuración estándar
-    options = PipelineOptions(streaming=True, project=os.getenv("PROJECT_ID"))
+    options = PipelineOptions(streaming=True, project=os.getenv("PROJECT_ID"), experiment='use_legacy_direct_runner')
     options.view_as(StandardOptions).runner = 'DirectRunner'
     
     # Nombres de suscripciones
@@ -280,14 +261,13 @@ def run():
     sub_a = f"projects/{os.getenv('PROJECT_ID')}/subscriptions/{os.getenv('SUBSCRIPTION_AGRESORES')}"
 
     with beam.Pipeline(options=options) as p:
-
-        side_db = (
+        db_pcoll = (
                     p
-                    | "Reloj" >> GenerateSequence(start=0, stop=None, period=60)
-                    | "VentanaReloj" >> beam.WindowInto(FixedWindows(60))
+                    | "TriggerUnico" >> beam.Create([None])
                     | "CargarDB" >> beam.ParDo(CargarDatosMaestros())
-                    | "VistaSingleton" >> beam.View.AsSingleton(element_default={}) 
                 )
+
+        side_db = beam.pvalue.AsSingleton(db_pcoll, default_value={})
 
 
 
@@ -295,7 +275,7 @@ def run():
             p 
             | "LeerVictimas" >> beam.io.ReadFromPubSub(subscription=sub_v)
             | "ParsearV" >> beam.Map(parsePubSubMessage)
-            | "FormatearV" >> beam.FlatMap(normalizeVictimas)
+            | "FormatearV" >> beam.Map(normalizeVictimas)
             | "CruzarDB" >> beam.FlatMap(cruzar_datos_en_memoria, datos_maestros=side_db)
             # Salida: ('ag_001', {datos_victima})
         )
@@ -303,7 +283,7 @@ def run():
             p 
             | "LeerAgresores" >> beam.io.ReadFromPubSub(subscription=sub_a)
             | "ParsearA" >> beam.Map(parsePubSubMessage)
-            | "FormatearA" >> beam.FlatMap(normalizeAgresores)
+            | "FormatearA" >> beam.Map(normalizeAgresores)
             | "ClaveAgresor" >> beam.Map(lambda x: (x['user_id'], x))
             # Salida: ('ag_001', {datos_agresor})
         )
