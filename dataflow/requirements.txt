@@ -1,0 +1,4 @@
+apache-beam[gcp]
+geopy
+psycopg2-binary
+python-dotenv

@@ -1,5 +1,5 @@
 import apache_beam as beam
-from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions
+from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions, SetupOptions
 from apache_beam.transforms.window import FixedWindows
 from apache_beam.transforms.periodicsequence import PeriodicImpulse
 from apache_beam.io import GenerateSequence
@@ -22,6 +22,11 @@ def parsePubSubMessage(message):
     logging.info(f"Parsed message: {message_dict}")
 
     return message_dict
+
+def jsonEncode(elemento):
+    mensaje_str = json.dumps(elemento)
+
+    return mensaje_str.encode('utf-8')
 
 def normalizeVictimas(event):
    
@@ -133,12 +138,18 @@ def detectar_match(elemento):
 
 class CargarDatosMaestros(beam.DoFn):
 
+    def __init__(self, db_host, db_user, db_pass, db_name):
+            self.db_host = db_host
+            self.db_user = db_user
+            self.db_pass = db_pass
+            self.db_name = db_name
+
     def start_bundle(self):
         self.conn = psycopg2.connect(
-            host=os.getenv("DB_HOST"), 
-            user=os.getenv("DB_USER"),
-            password=os.getenv("DB_PASS"),
-            dbname=os.getenv("DB_NAME")
+            host=self.db_host, 
+            user=self.db_user,
+            password=self.db_pass,
+            dbname=self.db_name
         )
 
     def process(self, element):
@@ -192,7 +203,7 @@ class CargarDatosMaestros(beam.DoFn):
 
 def run():
 
-    parser = argparse.ArgumentParser(description=('Input arguments for the Dataflow Streaming Pipeline.'))
+    parser = argparse.ArgumentParser(description=('Input arguments for the Dataflow Streaming Pipeline.'),allow_abbrev=False)
 
     parser.add_argument(
                 '--project_id',
@@ -203,29 +214,29 @@ def run():
     parser.add_argument(
                 '--victimas_pubsub_subscription_name',
                 required=False,
-                default=os.getenv("SUBSCRIPTION_VICTIMAS"),
+                default= "victimas-datos-sub",
                 help='Pub/Sub subscription for victim events.')
     
     parser.add_argument(
                 '--agresores_pubsub_subscription_name',
                 required=False,
-                default=os.getenv("SUBSCRIPTION_AGRESORES"),
+                default= "agresores-datos-sub",
                 help='Pub/Sub subscription for engagement events.')
     
     parser.add_argument(
                 '--alertas_policia_topic',
                 required=False,
-                default=os.getenv("TOPIC_POLICIA"),
+                default="policia-alertas",
                 help='Pub/Sub topic for police notifications.')
     parser.add_argument(
                 '--alertas_agresores_topic',
                 required=False,
-                default=os.getenv("TOPIC_AGRESORES"),
+                default= "agresores-alertas",
                 help='Pub/Sub topic for agressor notifications.')
     parser.add_argument(
                 '--alertas_victimas_topic',
                 required=False,
-                default=os.getenv("TOPIC_VICTIMAS"),
+                default= "victimas-alertas",
                 help='Pub/Sub topic for victim notifications.')
 
     
@@ -249,23 +260,31 @@ def run():
                 required=False,
                 help='Episode BigQuery table name.')
     
-    args, pipeline_opts = parser.parse_known_args()
-
-
-    # Configuración estándar
-    options = PipelineOptions(streaming=True, project=os.getenv("PROJECT_ID"), experiment='use_legacy_direct_runner')
-    options.view_as(StandardOptions).runner = 'DirectRunner'
+    #info de la db
+    parser.add_argument('--db_host', required=False, default=os.getenv("DB_HOST"))
+    parser.add_argument('--db_user', required=False, default=os.getenv("DB_USER"))
+    parser.add_argument('--db_pass', required=False, default=os.getenv("DB_PASS"))
+    parser.add_argument('--db_name', required=False, default=os.getenv("DB_NAME"))
+    
+    # Parseamos los argumentos
+    known_args, beam_args = parser.parse_known_args()
+    # Creamos las opciones pasándole los argumentos de Beam
+    options = PipelineOptions(beam_args)
+    options.view_as(StandardOptions).streaming = True
+    # Configuramos save_main_session para que las funciones globales viajen a los workers
+    options.view_as(SetupOptions).save_main_session = True
     
     # Nombres de suscripciones
     sub_v = f"projects/{os.getenv('PROJECT_ID')}/subscriptions/{os.getenv('SUBSCRIPTION_VICTIMAS')}"
     sub_a = f"projects/{os.getenv('PROJECT_ID')}/subscriptions/{os.getenv('SUBSCRIPTION_AGRESORES')}"
+    topic_policia = f"projects/{known_args.project_id}/topics/{known_args.alertas_policia_topic}"
 
     with beam.Pipeline(options=options) as p:
         db_pcoll = (
                     p
                     | "TriggerUnico" >> beam.Create([None])
-                    | "CargarDB" >> beam.ParDo(CargarDatosMaestros())
-                )
+                    | "CargarDB" >> beam.ParDo(CargarDatosMaestros(db_host=known_args.db_host, db_user=known_args.db_user, db_pass=known_args.db_pass, db_name=known_args.db_name))
+        )
 
         side_db = beam.pvalue.AsSingleton(db_pcoll, default_value={})
 
@@ -295,6 +314,8 @@ def run():
             | "Ventana15s" >> beam.WindowInto(FixedWindows(15))
             | "Agrupar" >> beam.GroupByKey() #juntamos en base a key que es el agresor id
             | "Calcular" >> beam.FlatMap(detectar_match)
+            | "Serializar" >> beam.Map(jsonEncode)
+            | "EnviarPolicia" >> beam.io.WriteToPubSub(topic=topic_policia)
         )
 
 if __name__ == '__main__':
