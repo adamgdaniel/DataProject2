@@ -113,6 +113,8 @@ def run():
                 REFERENCES victimas(id_victima)
         );
         """
+
+        
     ]
 
     try:
