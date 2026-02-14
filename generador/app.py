@@ -6,7 +6,7 @@ from google.cloud import pubsub_v1
 
 app = Flask(__name__)
 
-PROJECT_ID = "data-project-streaming-486719" 
+PROJECT_ID = "data-project-streaming-487217" 
 
 publisher = pubsub_v1.PublisherClient()
 
