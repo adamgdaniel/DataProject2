@@ -10,3 +10,5 @@ shapely>=2.0.0
 Faker>=33.0.0
 gunicorn==21.2.0
 google-cloud-pubsub==2.18.4
+cloud-sql-python-connector[pg8000]
+python-dotenv
