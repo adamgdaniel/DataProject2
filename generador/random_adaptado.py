@@ -7,7 +7,7 @@ import threading
 import requests
 
 # URL de tu API local
-API_URL = "http://172.28.180.90:8080"
+API_URL = "http://192.168.1.44:8080"
 
 class SafetyMovementGenerator:
     def __init__(self, place_name="Valencia, Spain"):
@@ -58,7 +58,7 @@ class SafetyMovementGenerator:
                     self.send_to_api(payload, s['role'])
 
                     curr_node = node_id
-                    time.sleep(max(0.5, min(5 / (s['kmh'] / 3.6), 3)))
+                    time.sleep(5)
 
             except Exception:
                 time.sleep(1)
