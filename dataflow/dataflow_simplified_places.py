@@ -1,6 +1,7 @@
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions
 from apache_beam.transforms.window import FixedWindows
+from apache_beam.transforms.periodicsequence import PeriodicImpulse
 from apache_beam.io import GenerateSequence
 import logging
 import json
@@ -96,26 +97,26 @@ def detectar_match(elemento):
                 print(f"🚨 JSON ALERTA GENERADO (FISICA): {alerta}")
             
     #matches de zona
-    for zona in vic.get('safe_zones', []):
-                
-                dist_zona = geodesic(datos_agresor['coordinates'], zona['place_coordinates']).meters
-                
-                if dist_zona < zona['radius']:
-                    alerta = {
-                        "alerta": "place",
-                        "nivel": "ALTO",
-                        "id_victima": vic['user_id'],
-                        "id_agresor": id_agresor,
-                        "id_place": zona['id_place'],
-                        "nombre_place": zona['place_name'], 
-                        "distancia_metros": round(dist_zona, 2),
-                        "radio_zona": zona['radius'],
-                        "coordenadas_agresor": datos_agresor['coordinates'],
-                        "coordenadas_place": zona['place_coordinates'],
-                        "timestamp": datos_agresor['timestamp']
-                    }
-                    alertas_json.append(alerta)
-                    print(f"🏰 JSON ALERTA GENERADO (Place): {alerta}") 
+        for zona in vic.get('safe_zones', []):
+                    
+                    dist_zona = geodesic(datos_agresor['coordinates'], zona['place_coordinates']).meters
+                    
+                    if dist_zona < zona['radius']:
+                        alerta = {
+                            "alerta": "place",
+                            "nivel": "ALTO",
+                            "id_victima": vic['user_id'],
+                            "id_agresor": id_agresor,
+                            "id_place": zona['id_place'],
+                            "nombre_place": zona['place_name'], 
+                            "distancia_metros": round(dist_zona, 2),
+                            "radio_zona": zona['radius'],
+                            "coordenadas_agresor": datos_agresor['coordinates'],
+                            "coordenadas_place": zona['place_coordinates'],
+                            "timestamp": datos_agresor['timestamp']
+                        }
+                        alertas_json.append(alerta)
+                        print(f"🏰 JSON ALERTA GENERADO (Place): {alerta}") 
             
     return alertas_json
 
@@ -199,15 +200,21 @@ def run():
                 help='Pub/Sub subscription for engagement events.')
     
     parser.add_argument(
-                '--policia_pubsub_topic_name',
+                '--alertas_policia_topic',
                 required=False,
                 default=os.getenv("TOPIC_POLICIA"),
                 help='Pub/Sub topic for police notifications.')
-
     parser.add_argument(
-                '--notifications_pubsub_topic_name',
+                '--alertas_agresores_topic',
                 required=False,
-                help='Pub/Sub topic for push notifications.')
+                default=os.getenv("TOPIC_AGRESORES"),
+                help='Pub/Sub topic for agressor notifications.')
+    parser.add_argument(
+                '--alertas_victimas_topic',
+                required=False,
+                default=os.getenv("TOPIC_VICTIMAS"),
+                help='Pub/Sub topic for victim notifications.')
+
     
     parser.add_argument(
                 '--firestore_collection',
@@ -241,13 +248,22 @@ def run():
     sub_a = f"projects/{os.getenv('PROJECT_ID')}/subscriptions/{os.getenv('SUBSCRIPTION_AGRESORES')}"
 
     with beam.Pipeline(options=options) as p:
+        db_pcoll = (
+                    p
+                    | "TriggerUnico" >> beam.Create([None])
+                    | "CargarDB" >> beam.ParDo(CargarDatosMaestros())
+                )
+
+        side_db = beam.pvalue.AsSingleton(db_pcoll, default_value={})
+
+
 
         victimas = (
             p 
             | "LeerVictimas" >> beam.io.ReadFromPubSub(subscription=sub_v)
             | "ParsearV" >> beam.Map(parsePubSubMessage)
             | "FormatearV" >> beam.FlatMap(normalizeVictimas)
-            | "BuscarEnDB" >> beam.ParDo(EnriquecerConDatosDB()) 
+            | "CruzarDB" >> beam.FlatMap(cruzar_datos_en_memoria, datos_maestros=side_db)
             # Salida: ('ag_001', {datos_victima})
         )
         agresores = (
@@ -255,16 +271,17 @@ def run():
             | "LeerAgresores" >> beam.io.ReadFromPubSub(subscription=sub_a)
             | "ParsearA" >> beam.Map(parsePubSubMessage)
             | "FormatearA" >> beam.FlatMap(normalizeAgresores)
+            | "ClaveAgresor" >> beam.Map(lambda x: (x['user_id'], x))
             # Salida: ('ag_001', {datos_agresor})
         )
 
-        # UNIÓN Y MATCHING
+        # Match
         (
             (victimas, agresores)
             | "UnirTodo" >> beam.Flatten()
-            | "Ventana15s" >> beam.WindowInto(FixedWindows(15)) # Ventana Fija
-            | "Agrupar" >> beam.GroupByKey() # Junta víctima y agresor por la clave 'ag_001'
-            | "Calcular" >> beam.FlatMap(detectar_match) # Función simple
+            | "Ventana15s" >> beam.WindowInto(FixedWindows(15))
+            | "Agrupar" >> beam.GroupByKey() #juntamos en base a key que es el agresor id
+            | "Calcular" >> beam.FlatMap(detectar_match)
         )
 
 if __name__ == '__main__':

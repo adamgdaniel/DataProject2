@@ -281,12 +281,22 @@ def run():
 
     with beam.Pipeline(options=options) as p:
 
+        side_db = (
+                    p
+                    | "Reloj" >> GenerateSequence(start=0, stop=None, period=60)
+                    | "VentanaReloj" >> beam.WindowInto(FixedWindows(60))
+                    | "CargarDB" >> beam.ParDo(CargarDatosMaestros())
+                    | "VistaSingleton" >> beam.View.AsSingleton(element_default={}) 
+                )
+
+
+
         victimas = (
             p 
             | "LeerVictimas" >> beam.io.ReadFromPubSub(subscription=sub_v)
             | "ParsearV" >> beam.Map(parsePubSubMessage)
             | "FormatearV" >> beam.FlatMap(normalizeVictimas)
-            | "BuscarEnDB" >> beam.ParDo(EnriquecerConDatosDB()) 
+            | "CruzarDB" >> beam.FlatMap(cruzar_datos_en_memoria, datos_maestros=side_db)
             # Salida: ('ag_001', {datos_victima})
         )
         agresores = (
@@ -294,16 +304,17 @@ def run():
             | "LeerAgresores" >> beam.io.ReadFromPubSub(subscription=sub_a)
             | "ParsearA" >> beam.Map(parsePubSubMessage)
             | "FormatearA" >> beam.FlatMap(normalizeAgresores)
+            | "ClaveAgresor" >> beam.Map(lambda x: (x['user_id'], x))
             # Salida: ('ag_001', {datos_agresor})
         )
 
-        # UNIÓN Y MATCHING
+        # Match
         (
             (victimas, agresores)
             | "UnirTodo" >> beam.Flatten()
-            | "Ventana15s" >> beam.WindowInto(FixedWindows(15)) # Ventana Fija
-            | "Agrupar" >> beam.GroupByKey() # Junta víctima y agresor por la clave 'ag_001'
-            | "Calcular" >> beam.FlatMap(detectar_match) # Función simple
+            | "Ventana15s" >> beam.WindowInto(FixedWindows(15))
+            | "Agrupar" >> beam.GroupByKey() #juntamos en base a key que es el agresor id
+            | "Calcular" >> beam.FlatMap(detectar_match)
         )
 
 if __name__ == '__main__':
