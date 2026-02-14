@@ -66,7 +66,8 @@ def run():
         CREATE TABLE IF NOT EXISTS safe_places (
             id_place VARCHAR(50) PRIMARY KEY,
             place_coordinates VARCHAR(100),
-            radius INTEGER
+            radius INTEGER,
+            place_name VARCHAR(100)
         );
         """,
         """

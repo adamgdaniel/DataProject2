@@ -45,6 +45,12 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
     if not datos_victima: return
     
     uid = datos_victima['user_id']
+
+    if uid in datos_maestros:
+        print(f"✅ DEBUG CRUCE: ¡{uid} encontrado! Agresores asociados: {datos_maestros[uid]['agresores']}")
+    else:
+        # Esto nos dirá si llega ' vi_001' en vez de 'vi_001'
+        print(f"❌ DEBUG CRUCE: {uid} NO está en datos_maestros. (Claves disponibles: {list(datos_maestros.keys())[:5]})")
     
     info = datos_maestros.get(uid)
     
@@ -61,6 +67,8 @@ def detectar_match(elemento):
     Devuelve: [alerta1, alerta2, ...] 
     """
     id_agresor, eventos = elemento
+
+    print(f"⚖️ DEBUG MATCH: Analizando ventana para Agresor {id_agresor}. Total eventos: {len(eventos)}") #########
     
     # Separar al agresor de las víctimas
     datos_agresor = None
@@ -148,7 +156,7 @@ class CargarDatosMaestros(beam.DoFn):
         query_zonas = """
                     SELECT r.id_victima, s.place_name, s.place_coordinates, s.radius, s.id_place 
                     FROM safe_places s
-                    JOIN rel_victimas_places r ON s.id_place = r.id_place
+                    JOIN rel_places_victimas r ON s.id_place = r.id_place
                 """
         cursor.execute(query_zonas)
 
@@ -163,7 +171,12 @@ class CargarDatosMaestros(beam.DoFn):
                             "place_coordinates": row[2],
                             "radius": float(row[3])
                         })
-
+        print(f"📊 DEBUG DB: Cargados {len(datos_maestros)} usuarios maestros.")
+        if len(datos_maestros) > 0:
+            ejemplo_id = list(datos_maestros.keys())[0]
+            print(f"🔑 DEBUG CLAVE: Ejemplo de ID en memoria: '{ejemplo_id}' (Ojo a los espacios)")
+            print(f"🔗 DEBUG RELACIÓN: {datos_maestros[ejemplo_id]}")
+        
         yield datos_maestros
         # Estructira devuelta de datos_maestros:
         # { "vic_001": {
@@ -240,7 +253,7 @@ def run():
 
 
     # Configuración estándar
-    options = PipelineOptions(streaming=True, project=os.getenv("PROJECT_ID"))
+    options = PipelineOptions(streaming=True, project=os.getenv("PROJECT_ID"), experiment='use_legacy_direct_runner')
     options.view_as(StandardOptions).runner = 'DirectRunner'
     
     # Nombres de suscripciones
@@ -262,7 +275,7 @@ def run():
             p 
             | "LeerVictimas" >> beam.io.ReadFromPubSub(subscription=sub_v)
             | "ParsearV" >> beam.Map(parsePubSubMessage)
-            | "FormatearV" >> beam.FlatMap(normalizeVictimas)
+            | "FormatearV" >> beam.Map(normalizeVictimas)
             | "CruzarDB" >> beam.FlatMap(cruzar_datos_en_memoria, datos_maestros=side_db)
             # Salida: ('ag_001', {datos_victima})
         )
@@ -270,7 +283,7 @@ def run():
             p 
             | "LeerAgresores" >> beam.io.ReadFromPubSub(subscription=sub_a)
             | "ParsearA" >> beam.Map(parsePubSubMessage)
-            | "FormatearA" >> beam.FlatMap(normalizeAgresores)
+            | "FormatearA" >> beam.Map(normalizeAgresores)
             | "ClaveAgresor" >> beam.Map(lambda x: (x['user_id'], x))
             # Salida: ('ag_001', {datos_agresor})
         )
