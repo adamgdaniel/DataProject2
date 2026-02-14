@@ -1,10 +1,10 @@
-from email.mime import message
 import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions
 from apache_beam.transforms.window import FixedWindows
 import logging
 import json
 import os
+import argparse
 from geopy.distance import geodesic
 import psycopg2 
 from dotenv import load_dotenv
@@ -76,7 +76,7 @@ def detectar_match(elemento):
 
 ### CLASES
 
-class EnriquecerConDatosDB(beam.DoFn):
+class EtiquetarVictimasConAgresores(beam.DoFn):
 
     def start_bundle(self):
         self.conn = psycopg2.connect(
@@ -89,21 +89,20 @@ class EnriquecerConDatosDB(beam.DoFn):
     def process(self, datos_victima):
         if not datos_victima: return
 
-        # 1. Consultar a la BD quiénes son los agresores de esta víctima
+        # COnsulta a la BD quiénes son los agresores de esta víctima
         cursor = self.conn.cursor()
-        query = "SELECT id_agresor FROM rel_victimas_agresores WHERE id_victima = %s"
-        cursor.execute(query, (datos_victima['user_id'],))
+        vic_id = datos_victima['user_id']
+        query = f"SELECT id_agresor FROM rel_victimas_agresores WHERE id_victima = '{vic_id}'"
+        cursor.execute(query)
         resultados = cursor.fetchall()
         
-        # 2. Etiquetar a la víctima con el ID de sus agresores
-        datos_victima['tipo'] = 'victima'
+        #Etiqueta a la víctima con el ID de sus agresores
         
         if not resultados:
-            logging.info(f"Víctima {datos_victima['user_id']} no tiene agresores en BD.")
+            logging.info(f"La victima {datos_victima['user_id']} no tiene agresores en la BD")
 
         for row in resultados:
-            id_agresor = row[0].lower() # ej: 'ag_001'
-            # Emitimos: (CLAVE_AGRESOR, DATOS_VICTIMA)
+            id_agresor = row[0] #para pillar el id del agresor
             yield (id_agresor, datos_victima)
 
     def finish_bundle(self):
@@ -114,6 +113,61 @@ class EnriquecerConDatosDB(beam.DoFn):
 ### PIPELINE
 
 def run():
+
+    parser = argparse.ArgumentParser(description=('Input arguments for the Dataflow Streaming Pipeline.'))
+
+    parser.add_argument(
+                '--project_id',
+                required=False,
+                default=os.getenv("PROJECT_ID"),
+                help='GCP cloud project name.')
+    
+    parser.add_argument(
+                '--victimas_pubsub_subscription_name',
+                required=False,
+                default=os.getenv("SUBSCRIPTION_VICTIMAS"),
+                help='Pub/Sub subscription for victim events.')
+    
+    parser.add_argument(
+                '--agresores_pubsub_subscription_name',
+                required=False,
+                default=os.getenv("SUBSCRIPTION_AGRESORES"),
+                help='Pub/Sub subscription for engagement events.')
+    
+    parser.add_argument(
+                '--policia_pubsub_subscription_name',
+                required=True,
+
+                help='Pub/Sub subscription for quality events.')
+
+    parser.add_argument(
+                '--notifications_pubsub_topic_name',
+                required=True,
+                help='Pub/Sub topic for push notifications.')
+    
+    parser.add_argument(
+                '--firestore_collection',
+                required=True,
+                help='Firestore collection name.')
+    
+    parser.add_argument(
+                '--bigquery_dataset',
+                required=True,
+                help='BigQuery dataset name.')
+    
+    parser.add_argument(
+                '--user_bigquery_table',
+                required=True,
+                help='User BigQuery table name.')
+    
+    parser.add_argument(
+                '--episode_bigquery_table',
+                required=True,
+                help='Episode BigQuery table name.')
+    
+    args, pipeline_opts = parser.parse_known_args()
+
+
     # Configuración estándar
     options = PipelineOptions(streaming=True, project=os.getenv("PROJECT_ID"))
     options.view_as(StandardOptions).runner = 'DirectRunner'
