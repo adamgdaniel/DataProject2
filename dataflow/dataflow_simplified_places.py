@@ -50,42 +50,33 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
     if not datos_victima: return
     
     uid = datos_victima['user_id']
-
-    if uid in datos_maestros:
-        print(f"✅ DEBUG CRUCE: ¡{uid} encontrado! Agresores asociados: {datos_maestros[uid]['agresores']}")
-    else:
-        # Esto nos dirá si llega ' vi_001' en vez de 'vi_001'
-        print(f"❌ DEBUG CRUCE: {uid} NO está en datos_maestros. (Claves disponibles: {list(datos_maestros.keys())[:5]})")
     
-    info = datos_maestros.get(uid)
+    info_victima_db = datos_maestros.get(uid)
     
-    if info:
-        datos_victima['safe_zones'] = info['zonas']
+    if info_victima_db:
+        datos_victima['safe_zones'] = info_victima_db['zonas']
         
         #Generamos un evento por cada agresor
-        for id_agresor in info['agresores']:
+        for id_agresor in info_victima_db['agresores']:
             yield (id_agresor, datos_victima)
 
 def detectar_match(elemento):
     """
-    Recibe: ('ag_001', [lista_de_eventos_mezclados])
+    Recibe: ('ag_001', [lista_de_usuaros_mezclados])
     Devuelve: [alerta1, alerta2, ...] 
     """
-    id_agresor, eventos = elemento
-
-    print(f"⚖️ DEBUG MATCH: Analizando ventana para Agresor {id_agresor}. Total eventos: {len(eventos)}") #########
-    
+    id_agresor, usuarios = elemento
+    distancia_alejamiento = 500
     # Separar al agresor de las víctimas
     datos_agresor = None
     victimas = []
 
-    for e in eventos:
+    for e in usuarios:
         if e['tipo'] == 'agresor':
             datos_agresor = e
         elif e['tipo'] == 'victima':
             victimas.append(e)
 
-    #Si no hay datos del agresor o de las víctimas, no devuelve nada
     if not datos_agresor or not victimas:
         return []
 
@@ -94,7 +85,7 @@ def detectar_match(elemento):
     for vic in victimas:
         dist_fisica = round(geodesic(datos_agresor['coordinates'], vic['coordinates']).meters,2)
         
-        if dist_fisica < 500:
+        if dist_fisica < distancia_alejamiento:
                 alerta = {
                     "alerta": "fisica",
                     "nivel": "CRITICO",
@@ -105,7 +96,7 @@ def detectar_match(elemento):
                     "coordenadas_victima": vic['coordinates'],
                     "timestamp": datos_agresor['timestamp']
                 }
-                # No incluimos campos de 'place' porque no aplican aquí
+
                 alertas_json.append(alerta)
                 print(f"🚨 JSON ALERTA GENERADO (FISICA): {alerta}")
             
@@ -114,7 +105,7 @@ def detectar_match(elemento):
                     
                     dist_zona = geodesic(datos_agresor['coordinates'], zona['place_coordinates']).meters
                     
-                    if dist_zona < zona['radius']:
+                    if dist_zona < (distancia_alejamiento - zona['radius']):
                         alerta = {
                             "alerta": "place",
                             "nivel": "ALTO",
@@ -183,10 +174,7 @@ class CargarDatosMaestros(beam.DoFn):
                             "radius": float(row[3])
                         })
         print(f"📊 DEBUG DB: Cargados {len(datos_maestros)} usuarios maestros.")
-        if len(datos_maestros) > 0:
-            ejemplo_id = list(datos_maestros.keys())[0]
-            print(f"🔑 DEBUG CLAVE: Ejemplo de ID en memoria: '{ejemplo_id}' (Ojo a los espacios)")
-            print(f"🔗 DEBUG RELACIÓN: {datos_maestros[ejemplo_id]}")
+
         
         yield datos_maestros
         # Estructira devuelta de datos_maestros:
@@ -207,19 +195,19 @@ def run():
 
     parser.add_argument(
                 '--project_id',
-                required=False,
+                required=True,
                 default=os.getenv("PROJECT_ID"),
                 help='GCP cloud project name.')
     
     parser.add_argument(
                 '--victimas_pubsub_subscription_name',
-                required=False,
+                required=True,
                 default= "victimas-datos-sub",
                 help='Pub/Sub subscription for victim events.')
     
     parser.add_argument(
                 '--agresores_pubsub_subscription_name',
-                required=False,
+                required=True,
                 default= "agresores-datos-sub",
                 help='Pub/Sub subscription for engagement events.')
     
@@ -261,10 +249,10 @@ def run():
                 help='Episode BigQuery table name.')
     
     #info de la db
-    parser.add_argument('--db_host', required=False, default=os.getenv("DB_HOST"))
-    parser.add_argument('--db_user', required=False, default=os.getenv("DB_USER"))
-    parser.add_argument('--db_pass', required=False, default=os.getenv("DB_PASS"))
-    parser.add_argument('--db_name', required=False, default=os.getenv("DB_NAME"))
+    parser.add_argument('--db_host', required=True)
+    parser.add_argument('--db_user', required=True)
+    parser.add_argument('--db_pass', required=True)
+    parser.add_argument('--db_name', required=True)
     
     # Parseamos los argumentos
     known_args, beam_args = parser.parse_known_args()
@@ -275,8 +263,8 @@ def run():
     options.view_as(SetupOptions).save_main_session = True
     
     # Nombres de suscripciones
-    sub_v = f"projects/{os.getenv('PROJECT_ID')}/subscriptions/{os.getenv('SUBSCRIPTION_VICTIMAS')}"
-    sub_a = f"projects/{os.getenv('PROJECT_ID')}/subscriptions/{os.getenv('SUBSCRIPTION_AGRESORES')}"
+    sub_v = f"projects/{known_args.project_id}/subscriptions/{known_args.victimas_pubsub_subscription_name}"
+    sub_a = f"projects/{known_args.project_id}/subscriptions/{known_args.agresores_pubsub_subscription_name}"
     topic_policia = f"projects/{known_args.project_id}/topics/{known_args.alertas_policia_topic}"
 
     with beam.Pipeline(options=options) as p:
@@ -289,14 +277,13 @@ def run():
         side_db = beam.pvalue.AsSingleton(db_pcoll, default_value={})
 
 
-
         victimas = (
             p 
             | "LeerVictimas" >> beam.io.ReadFromPubSub(subscription=sub_v)
             | "ParsearV" >> beam.Map(parsePubSubMessage)
             | "FormatearV" >> beam.Map(normalizeVictimas)
             | "CruzarDB" >> beam.FlatMap(cruzar_datos_en_memoria, datos_maestros=side_db)
-            # Salida: ('ag_001', {datos_victima})
+            # Salida: ('agr_001', {datos_victima})
         )
         agresores = (
             p 
@@ -304,7 +291,7 @@ def run():
             | "ParsearA" >> beam.Map(parsePubSubMessage)
             | "FormatearA" >> beam.Map(normalizeAgresores)
             | "ClaveAgresor" >> beam.Map(lambda x: (x['user_id'], x))
-            # Salida: ('ag_001', {datos_agresor})
+            # Salida: ('agr_001', {datos_agresor})
         )
 
         # Match
@@ -320,5 +307,5 @@ def run():
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.INFO)
-    print("🚀 Arrancando Pipeline Simplificado...")
+    print("🚀 Arrancando Pipeline...")
     run()
