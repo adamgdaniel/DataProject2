@@ -15,13 +15,16 @@ load_dotenv()
 
 ### FUNCIONES
 def parsePubSubMessage(message):
+    try:
+        message_str = message.decode('utf-8')
+        message_dict = json.loads(message_str)
 
-    message_str = message.decode('utf-8')
-    message_dict = json.loads(message_str)
+        logging.info(f"Parsed message: {message_dict}")
 
-    logging.info(f"Parsed message: {message_dict}")
-
-    return message_dict
+        return message_dict
+    except Exception as e:
+        logging.error(f"Error parsing message: {e}")
+        return None
 
 def jsonEncode(elemento):
     mensaje_str = json.dumps(elemento)
@@ -49,7 +52,7 @@ def normalizeAgresores(event):
 def cruzar_datos_en_memoria(datos_victima, datos_maestros):
     if not datos_victima: return
     
-    uid = datos_victima['user_id']
+    uid = str(datos_victima['user_id'])
     
     info_victima_db = datos_maestros.get(uid)
     
