@@ -74,7 +74,7 @@ def run():
         CREATE TABLE IF NOT EXISTS rel_victimas_agresores (
             id_agresor VARCHAR(50) NOT NULL,
             id_victima VARCHAR(50) NOT NULL,
-            riesgo_vital BOOLEAN DEFAULT FALSE,
+            dist_seguridad INTEGER DEFAULT 500,
             PRIMARY KEY (id_agresor, id_victima),
             CONSTRAINT fk_rva_agresor FOREIGN KEY (id_agresor) 
                 REFERENCES agresores(id_agresor) ON DELETE CASCADE,

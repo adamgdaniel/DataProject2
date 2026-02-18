@@ -55,14 +55,14 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
     if not datos_victima: return
     
     uid = str(datos_victima['user_id'])
-    
     info_victima_db = datos_maestros.get(uid)
     
     if info_victima_db:
         datos_victima['safe_zones'] = info_victima_db['zonas']
         
-        #Generamos un evento por cada agresor
-        for id_agresor in info_victima_db['agresores']:
+        for id_agresor, dist in info_victima_db['agresores'].items():
+            # Ahora datos_victima tiene: user_id, coordinates, timestamp, tipo, safe_zones Y dist_seguridad
+            datos_victima['dist_seguridad'] = dist            
             yield (id_agresor, datos_victima)
 
 def detectar_match(elemento):
@@ -71,7 +71,7 @@ def detectar_match(elemento):
     Devuelve: [alerta1, alerta2, ...] 
     """
     id_agresor, usuarios = elemento
-    distancia_alejamiento = 500
+
     # Separar al agresor de las víctimas
     datos_agresor = None
     victimas = []
@@ -88,9 +88,10 @@ def detectar_match(elemento):
     # Calcular distancias
     alertas_json = []
     for vic in victimas:
+        distancia_configurada = vic.get('dist_seguridad', 500)
         dist_fisica = round(geodesic(datos_agresor['coordinates'], vic['coordinates']).meters,2)
         
-        if dist_fisica < distancia_alejamiento:
+        if dist_fisica < distancia_configurada:
                 alerta = {
                     "alerta": "fisica",
                     "activa": True,
@@ -100,7 +101,8 @@ def detectar_match(elemento):
                     "distancia_metros": dist_fisica,
                     "coordenadas_agresor": datos_agresor['coordinates'], 
                     "coordenadas_victima": vic['coordinates'],
-                    "timestamp": datos_agresor['timestamp']
+                    "timestamp": datos_agresor['timestamp'],
+                    "dist_seguridad": distancia_configurada,
                 }
 
                 alertas_json.append(alerta)
@@ -111,7 +113,7 @@ def detectar_match(elemento):
                     
                     dist_zona = geodesic(datos_agresor['coordinates'], zona['place_coordinates']).meters
                     
-                    if dist_zona < (distancia_alejamiento + zona['radius']):
+                    if dist_zona < (distancia_configurada + zona['radius']):
                         alerta = {
                             "alerta": "place",
                             "activa": True,
@@ -123,7 +125,8 @@ def detectar_match(elemento):
                             "radio_zona": zona['radius'],
                             "coordenadas_agresor": datos_agresor['coordinates'],
                             "coordenadas_place": zona['place_coordinates'],
-                            "timestamp": datos_agresor['timestamp']
+                            "timestamp": datos_agresor['timestamp'],
+                            "distancia_limite": distancia_configurada,
                         }
                         alertas_json.append(alerta)
                         print(f"🏰 JSON ALERTA GENERADO (Place): {alerta}") 
@@ -157,12 +160,13 @@ class CargarDatosMaestros(beam.DoFn):
         #Cargar Agrersores-victimas
         try:
                     # --- 1. Cargar Agresores-Víctimas ---
-            cursor.execute("SELECT id_victima, id_agresor FROM rel_victimas_agresores")
-            for vic, agr in cursor.fetchall():
+            cursor.execute("SELECT id_victima, id_agresor, dist_seguridad FROM rel_victimas_agresores")
+            for vic, agr, dist in cursor.fetchall():
                 vic, agr = str(vic), str(agr)
+                dist_seguridad = float(dist) if dist is not None else 500.0
                 if vic not in datos_maestros:
-                    datos_maestros[vic] = {'agresores': [], 'zonas': []}
-                datos_maestros[vic]['agresores'].append(agr)
+                    datos_maestros[vic] = {'agresores': {}, 'zonas': []}
+                datos_maestros[vic]['agresores'][agr] = dist_seguridad
 
         #Cargar Safe Places
             query_zonas = """
