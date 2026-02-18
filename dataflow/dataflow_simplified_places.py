@@ -190,6 +190,28 @@ class CargarDatosMaestros(beam.DoFn):
         if self.conn:
             self.conn.close()
 
+
+class FormatFirestoreDocument(beam.DoFn):
+
+    def __init__(self,firestore_collection, project_id):
+        self.firestore_collection = firestore_collection
+        self.project_id = project_id
+
+    def setup(self):
+        from google.cloud import firestore
+        self.db = firestore.Client(project=self.project_id)
+
+    def process(self, element):
+
+        doc_ref = self.db.collection(self.firestore_collection).document(element['user_id']).collection('notifications').document(element['notification_id'])
+        doc_ref.set(element)
+
+        logging.info(f"Document written to Firestore: {doc_ref.id}")
+
+        yield element
+
+
+
 ### PIPELINE
 
 def run():
