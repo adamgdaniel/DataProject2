@@ -110,8 +110,12 @@ resource "google_service_account" "cloud_run" {
     display_name = "Service account para Cloud run"
 }
 resource "google_project_iam_member" "cloud_run_roles" {
+    for_each = toset([
+    "roles/logging.logWriter",
+    "roles/cloudsql.client"
+  ])
     project = var.project_id
-    role = "roles/cloudsql.client"  
+    role    = each.value 
     member = "serviceAccount:${google_service_account.cloud_run.email}"
 }
 
@@ -171,4 +175,26 @@ resource "google_artifact_registry_repository" "mi_repo" {
   repository_id = "repo-imagenes-proyecto"
   description   = "Repositorio Docker para Cloud Run"
   format        = "DOCKER"
+}
+
+resource "google_service_account" "cloudbuild_sa" {
+  account_id   = "my-build-sa"
+  display_name = "Service Account para Cloud Build (Terraform)"
+  description  = "Cuenta con permisos mínimos para desplegar la DB"
+}
+
+resource "google_project_iam_member" "build_sa_roles" {
+  for_each = toset([
+    "roles/logging.logWriter",
+    "roles/artifactregistry.writer",
+    "roles/run.developer",
+    "roles/iam.serviceAccountUser",
+    "roles/storage.objectViewer",
+    "roles/cloudbuild.builds.builder",
+    "roles/developerconnect.readTokenAccessor"
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
