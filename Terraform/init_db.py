@@ -105,7 +105,7 @@ def run():
         );
         """,
         """
-        CREATE TABLE IF NOT EXISTS denuncias2 (
+        CREATE TABLE IF NOT EXISTS denuncias3 (
             id_denuncia SERIAL PRIMARY KEY,
             fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             descripcion TEXT,
