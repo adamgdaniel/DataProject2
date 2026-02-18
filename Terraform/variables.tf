@@ -78,7 +78,7 @@ variable "subscription_agresores_datos"{
 variable "bucket_imagenes"{
     description = "The name of the Cloud Storage bucket for images."
     type = string
-    default = "imagenes-agresores-victimas5"
+    default = "imagenes-agresores-victimas6"
 }
 
 variable "analitical_dataset"{

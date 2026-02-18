@@ -105,7 +105,7 @@ def run():
         );
         """,
         """
-        CREATE TABLE IF NOT EXISTS denuncias (
+        CREATE TABLE IF NOT EXISTS denuncias2 (
             id_denuncia SERIAL PRIMARY KEY,
             fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
             descripcion TEXT,
@@ -114,7 +114,7 @@ def run():
                 REFERENCES victimas(id_victima)
         );
         """
-        
+
     ]
 
     try:
