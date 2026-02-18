@@ -2,7 +2,8 @@ import apache_beam as beam
 from apache_beam.options.pipeline_options import PipelineOptions, StandardOptions, SetupOptions
 from apache_beam.transforms.window import FixedWindows
 from apache_beam.transforms.periodicsequence import PeriodicImpulse
-from apache_beam.io import GenerateSequence
+from apache_beam.transforms import trigger
+from apache_beam.transforms import window
 import logging
 import json
 import os
@@ -92,6 +93,7 @@ def detectar_match(elemento):
         if dist_fisica < distancia_alejamiento:
                 alerta = {
                     "alerta": "fisica",
+                    "activa": True,
                     "nivel": "CRITICO",
                     "id_victima": vic['user_id'],
                     "id_agresor": id_agresor,
@@ -109,10 +111,10 @@ def detectar_match(elemento):
                     
                     dist_zona = geodesic(datos_agresor['coordinates'], zona['place_coordinates']).meters
                     
-                    if dist_zona < (distancia_alejamiento - zona['radius']):
+                    if dist_zona < (distancia_alejamiento + zona['radius']):
                         alerta = {
                             "alerta": "place",
-                            "nivel": "ALTO",
+                            "activa": True,
                             "id_victima": vic['user_id'],
                             "id_agresor": id_agresor,
                             "id_place": zona['id_place'],
@@ -140,6 +142,7 @@ class CargarDatosMaestros(beam.DoFn):
             self.db_name = db_name
 
     def start_bundle(self):
+        import psycopg2
         self.conn = psycopg2.connect(
             host=self.db_host, 
             user=self.db_user,
@@ -152,40 +155,46 @@ class CargarDatosMaestros(beam.DoFn):
         datos_maestros = {}
 
         #Cargar Agrersores-victimas
-        cursor.execute("SELECT id_victima, id_agresor FROM rel_victimas_agresores")
-        for vic, agr in cursor.fetchall():
-            if vic not in datos_maestros:
-                datos_maestros[vic] = {'agresores': [], 'zonas': []}
-            datos_maestros[vic]['agresores'].append(agr)
+        try:
+                    # --- 1. Cargar Agresores-Víctimas ---
+            cursor.execute("SELECT id_victima, id_agresor FROM rel_victimas_agresores")
+            for vic, agr in cursor.fetchall():
+                vic, agr = str(vic), str(agr)
+                if vic not in datos_maestros:
+                    datos_maestros[vic] = {'agresores': [], 'zonas': []}
+                datos_maestros[vic]['agresores'].append(agr)
 
         #Cargar Safe Places
-        query_zonas = """
-                    SELECT r.id_victima, s.place_name, s.place_coordinates, s.radius, s.id_place 
-                    FROM safe_places s
-                    JOIN rel_places_victimas r ON s.id_place = r.id_place
-                """
-        cursor.execute(query_zonas)
+            query_zonas = """
+                        SELECT r.id_victima, s.place_name, s.place_coordinates, s.radius, s.id_place 
+                        FROM safe_places s
+                        JOIN rel_places_victimas r ON s.id_place = r.id_place
+                    """
+            cursor.execute(query_zonas)
 
-        for row in cursor.fetchall():
-                    vic = row[0]
-                    
-                    if vic in datos_maestros:
+            for row in cursor.fetchall():
+                        vic = row[0]
+                        
+                        if vic in datos_maestros:
 
-                        datos_maestros[vic]['zonas'].append({
-                            "place_name": row[1],
-                            "id_place": row[4],
-                            "place_coordinates": row[2],
-                            "radius": float(row[3])
-                        })
-        print(f"📊 DEBUG DB: Cargados {len(datos_maestros)} usuarios maestros.")
+                            datos_maestros[vic]['zonas'].append({
+                                "place_name": row[1],
+                                "id_place": row[4],
+                                "place_coordinates": row[2],
+                                "radius": float(row[3])
+                            })
+            yield datos_maestros
 
-        
-        yield datos_maestros
+        except Exception as e:
+            logging.error(f"❌ Error cargando DB: {e}")
+            yield {}
+    
         # Estructira devuelta de datos_maestros:
         # { "vic_001": {
         #       "agresores": ["ag_001", "ag_002"],  
         #       "zonas": [
         #           {"place_name": "Comisaría Centro", "id_place": "place_001", "place_coordinates": (39.4700, -0.3765), "radius": 300}
+
 
     def finish_bundle(self):
         if self.conn:
@@ -193,22 +202,28 @@ class CargarDatosMaestros(beam.DoFn):
 
 
 class FormatFirestoreDocument(beam.DoFn):
-
-    def __init__(self,firestore_collection, project_id):
-        self.firestore_collection = firestore_collection
+    def __init__(self, project_id, firestore_collection):
         self.project_id = project_id
+        self.collection = firestore_collection
 
     def setup(self):
+        # Se ejecuta 1 vez al arrancar el worker
+        from google.cloud import firestore
         self.db = firestore.Client(project=self.project_id)
 
     def process(self, element):
+        # element ya es el diccionario de la alerta. Lo guardamos directo.
+        try:
+            self.db.collection(self.collection).add(element)
+        except Exception as e:
+            import logging
+            logging.error(f"Error guardando en Firestore: {e}")
+        yield element  
 
-        doc_ref = self.db.collection(self.firestore_collection).document(element['user_id']).collection('notifications').document(element['notification_id'])
-        doc_ref.set(element)
-
-        logging.info(f"Document written to Firestore: {doc_ref.id}")
-
-        yield element
+    def teardown(self):
+        # Cierra la conexión al apagar
+        if hasattr(self, 'db'):
+            self.db.close()
 
 
 
@@ -238,7 +253,7 @@ def run():
     
     parser.add_argument(
             '--firestore_collection',
-            required=False,
+            required=True,
             help='Firestore collection name.')
     
     parser.add_argument(
@@ -293,23 +308,23 @@ def run():
     sub_v = f"projects/{known_args.project_id}/subscriptions/{known_args.victimas_pubsub_subscription_name}"
     sub_a = f"projects/{known_args.project_id}/subscriptions/{known_args.agresores_pubsub_subscription_name}"
     topic_policia = f"projects/{known_args.project_id}/topics/{known_args.alertas_policia_topic}"
-
+   
     with beam.Pipeline(options=options) as p:
-        db_pcoll = (
-                    p
-                    | "TriggerUnico" >> beam.Create([None])
-                    | "CargarDB" >> beam.ParDo(CargarDatosMaestros(db_host=known_args.db_host, db_user=known_args.db_user, db_pass=known_args.db_pass, db_name=known_args.db_name))
-        )
+        datos_side_input = (
+            p
+            | "Reloj" >> PeriodicImpulse(fire_interval=900, apply_windowing=True)
+            | "VentanaGlobal" >> beam.WindowInto(window.GlobalWindows(), trigger=trigger.Repeatedly(trigger.AfterCount(1)), accumulation_mode=trigger.AccumulationMode.DISCARDING)
+            | "CargarDB" >> beam.ParDo(CargarDatosMaestros(db_host=known_args.db_host, db_user=known_args.db_user, db_pass=known_args.db_pass, db_name=known_args.db_name))
+            )
 
-        side_db = beam.pvalue.AsSingleton(db_pcoll, default_value={})
-
+        vista_datos_maestros = beam.pvalue.AsSingleton(datos_side_input, default_value={})
 
         victimas = (
             p 
             | "LeerVictimas" >> beam.io.ReadFromPubSub(subscription=sub_v)
             | "ParsearV" >> beam.Map(parsePubSubMessage)
             | "FormatearV" >> beam.Map(normalizeVictimas)
-            | "CruzarDB" >> beam.FlatMap(cruzar_datos_en_memoria, datos_maestros=side_db)
+            | "CruzarDB" >> beam.FlatMap(cruzar_datos_en_memoria, datos_maestros=vista_datos_maestros)
             # Sale: ('agr_001', {datos_victima})
         )
         agresores = (
@@ -329,6 +344,7 @@ def run():
             | "Agrupar" >> beam.GroupByKey() #juntamos en base a key que es el agresor id
             | "Calcular" >> beam.FlatMap(detectar_match)
             | "Serializar" >> beam.Map(jsonEncode)
+            | "EnviarFirestore" >> beam.ParDo(FormatFirestoreDocument(firestore_collection=known_args.firestore_collection, project_id=known_args.project_id))
             | "EnviarPolicia" >> beam.io.WriteToPubSub(topic=topic_policia)
         )
 

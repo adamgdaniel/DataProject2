@@ -1,4 +1,6 @@
 apache-beam[gcp]
-geopy
+google-cloud-firestore
+google-cloud-pubsub
 psycopg2-binary
+geopy
 python-dotenv
