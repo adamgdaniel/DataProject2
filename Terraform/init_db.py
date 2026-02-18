@@ -104,6 +104,7 @@ def run():
                 REFERENCES safe_places(id_place) ON DELETE CASCADE
         );
         """,
+
         """
         CREATE TABLE IF NOT EXISTS denuncias (
             id_denuncia SERIAL PRIMARY KEY,
@@ -114,8 +115,6 @@ def run():
                 REFERENCES victimas(id_victima)
         );
         """
-
-        
     ]
 
     try:
