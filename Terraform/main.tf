@@ -198,3 +198,62 @@ resource "google_project_iam_member" "build_sa_roles" {
   role    = each.value
   member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
+
+resource "google_service_account" "firestore_sa2" {
+  account_id   = "firestore-sa"
+  display_name = "Service Account para Firestore"
+  description  = "Cuenta con permisos mínimos para leer en Firestore"
+}
+
+resource "google_project_iam_member" "firestore_sa_roles" {
+  project = var.project_id
+  role    = "roles/datastore.viewer"
+  member  = "serviceAccount:${google_service_account.firestore_sa2.email}"
+}
+resource "google_service_account_key" "firestore_sa_key" {
+  service_account_id = google_service_account.firestore_sa2.name
+  public_key_type    = "TYPE_X509_PEM_FILE"
+}
+resource "local_file" "service_account_json" {
+  content  = base64decode(google_service_account_key.firestore_sa_key.private_key)
+  filename = "${path.module}/firestore-key.json"
+}
+resource "google_storage_bucket" "dataflow_bucket"{
+  location = var.region
+  name = var.bucket_dataflow
+}
+resource "google_service_account" "dataflow_sa" {
+  account_id   = "dataflow-sa"
+  display_name = "Service Account para Dataflow"
+  description  = "Cuenta con permisos mínimos para ejecutar Dataflow"
+}
+resource "google_project_iam_member" "dataflow_sa_roles" {
+  for_each = toset([
+    "roles/pubsub.subscriber",
+    "roles/datastore.user",
+    "roles/dataflow.worker",     
+    "roles/bigquery.jobUser",
+    "roles/bigquery.dataEditor"
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.dataflow_sa.email}"
+}
+resource "google_cloudbuild_trigger" "dataflow_deploy_trigger" {
+  name        = "deploy-dataflow-on-push"
+  description = "Despliega/Actualiza Dataflow al hacer push a main"
+  project     = var.project_id
+  github {
+    owner = var.github_owner
+    name  = var.github_repo
+    push {
+      branch = "^main$"
+    }
+  }
+  filename = "dataflow/cloudbuild.yaml"
+  substitutions = {
+    _SERVICE_ACCOUNT = var.dataflow_sa_email
+    _REGION          = var.region
+  }
+  included_files = ["dataflow/**"]
+}
