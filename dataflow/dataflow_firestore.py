@@ -214,8 +214,9 @@ class FormatFirestoreDocument(beam.DoFn):
 
     def process(self, element):
         # element ya es el diccionario de la alerta. Lo guardamos directo.
+        doc_id = f"{element['id_victima']}_{element['id_agresor']}"
         try:
-            self.db.collection(self.collection).add(element)
+            self.db.collection(self.collection).document(doc_id).set(element, merge=True)
         except Exception as e:
             import logging
             logging.error(f"Error guardando en Firestore: {e}")
