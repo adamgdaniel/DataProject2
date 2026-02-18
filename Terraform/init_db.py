@@ -74,7 +74,7 @@ def run():
         CREATE TABLE IF NOT EXISTS rel_victimas_agresores (
             id_agresor VARCHAR(50) NOT NULL,
             id_victima VARCHAR(50) NOT NULL,
-            riesgo_vital BOOLEAN DEFAULT FALSE,
+            dist_seguridad INTEGER DEFAULT 500,
             PRIMARY KEY (id_agresor, id_victima),
             CONSTRAINT fk_rva_agresor FOREIGN KEY (id_agresor) 
                 REFERENCES agresores(id_agresor) ON DELETE CASCADE,
@@ -82,17 +82,7 @@ def run():
                 REFERENCES victimas(id_victima) ON DELETE CASCADE
         );
         """,
-        """
-        CREATE TABLE IF NOT EXISTS rel_places_agresores (
-            id_agresor VARCHAR(50) NOT NULL,
-            id_place VARCHAR(50) NOT NULL,
-            PRIMARY KEY (id_agresor, id_place),
-            CONSTRAINT fk_rpa_agresor FOREIGN KEY (id_agresor) 
-                REFERENCES agresores(id_agresor) ON DELETE CASCADE,
-            CONSTRAINT fk_rpa_place FOREIGN KEY (id_place) 
-                REFERENCES safe_places(id_place) ON DELETE CASCADE
-        );
-        """,
+
         """
         CREATE TABLE IF NOT EXISTS rel_places_victimas (
             id_victima VARCHAR(50) NOT NULL,
