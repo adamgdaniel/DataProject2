@@ -202,14 +202,15 @@ class CargarDatosMaestros(beam.DoFn):
 
 
 class FormatFirestoreDocument(beam.DoFn):
-    def __init__(self, project_id, firestore_collection):
+    def __init__(self, project_id, firestore_collection, firestore_database):
         self.project_id = project_id
         self.collection = firestore_collection
+        self.database = firestore_database
 
     def setup(self):
         # Se ejecuta 1 vez al arrancar el worker
         from google.cloud import firestore
-        self.db = firestore.Client(project=self.project_id)
+        self.db = firestore.Client(project=self.project_id, database=self.database)
 
     def process(self, element):
         # element ya es el diccionario de la alerta. Lo guardamos directo.
@@ -251,6 +252,11 @@ def run():
                 default= "agresores-datos-sub",
                 help='Pub/Sub subscription for engagement events.')
     
+    parser.add_argument(
+            '--firestore_db',
+            required=True,
+            help='Firestore database name.')
+
     parser.add_argument(
             '--firestore_collection',
             required=True,
@@ -308,6 +314,7 @@ def run():
     sub_v = f"projects/{known_args.project_id}/subscriptions/{known_args.victimas_pubsub_subscription_name}"
     sub_a = f"projects/{known_args.project_id}/subscriptions/{known_args.agresores_pubsub_subscription_name}"
     topic_policia = f"projects/{known_args.project_id}/topics/{known_args.alertas_policia_topic}"
+    firestore_database = known_args.firestore_db
    
     with beam.Pipeline(options=options) as p:
         datos_side_input = (
@@ -343,8 +350,8 @@ def run():
             | "Ventana15s" >> beam.WindowInto(FixedWindows(15))
             | "Agrupar" >> beam.GroupByKey() #juntamos en base a key que es el agresor id
             | "Calcular" >> beam.FlatMap(detectar_match)
+            | "EnviarFirestore" >> beam.ParDo(FormatFirestoreDocument(firestore_collection=known_args.firestore_collection, project_id=known_args.project_id, firestore_database=firestore_database))
             | "Serializar" >> beam.Map(jsonEncode)
-            | "EnviarFirestore" >> beam.ParDo(FormatFirestoreDocument(firestore_collection=known_args.firestore_collection, project_id=known_args.project_id))
             | "EnviarPolicia" >> beam.io.WriteToPubSub(topic=topic_policia)
         )
 
