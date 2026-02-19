@@ -74,7 +74,7 @@ if __name__ == "__main__":
         simular_match_fisico()
         time.sleep(5) # Espera breve entre escenarios
         
-        simular_safe_place_intrusion()
+        # simular_safe_place_intrusion()
         
         print("\n⏳ Ciclo terminado. Esperando 15s para nueva ronda...")
         print("   (Esto permite ver los resultados en Dataflow/Consola)")

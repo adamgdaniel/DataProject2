@@ -11,6 +11,7 @@ import argparse
 from geopy.distance import geodesic
 import psycopg2 
 from google.cloud import firestore
+import math
 from dotenv import load_dotenv
 
 load_dotenv()
@@ -65,6 +66,28 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
             datos_victima['dist_seguridad'] = dist            
             yield (id_agresor, datos_victima)
 
+def calcular_direccion_escape(coords_victima, coords_agresor):
+    lat_v, lon_v = coords_victima
+    lat_a, lon_a = coords_agresor
+
+    d_lat = lat_a - lat_v
+    d_lon = lon_a - lon_v
+
+    # Calculamos el ángulo en grados
+    angulo = math.degrees(math.atan2(d_lat, d_lon))
+    if angulo < 0:
+        angulo += 360
+
+
+    if 22.5 <= angulo < 67.5: return "Noreste"
+    elif 67.5 <= angulo < 112.5: return "Norte"
+    elif 112.5 <= angulo < 157.5: return "Noroeste"
+    elif 157.5 <= angulo < 202.5: return "Oeste"
+    elif 202.5 <= angulo < 247.5: return "Suroeste"
+    elif 247.5 <= angulo < 292.5: return "Sur"
+    elif 292.5 <= angulo < 337.5: return "Sureste"
+    else: return "Este"
+
 def detectar_match(elemento):
     """
     Recibe: ('ag_001', [lista_de_usuaros_mezclados])
@@ -92,6 +115,7 @@ def detectar_match(elemento):
         dist_fisica = round(geodesic(datos_agresor['coordinates'], vic['coordinates']).meters,2)
         
         if dist_fisica < distancia_configurada:
+                direccion_escape = calcular_direccion_escape(vic['coordinates'], datos_agresor['coordinates'])
                 alerta = {
                     "alerta": "fisica",
                     "activa": True,
@@ -99,6 +123,7 @@ def detectar_match(elemento):
                     "id_victima": vic['user_id'],
                     "id_agresor": id_agresor,
                     "distancia_metros": dist_fisica,
+                    "direccion_escape": direccion_escape,
                     "coordenadas_agresor": datos_agresor['coordinates'], 
                     "coordenadas_victima": vic['coordinates'],
                     "timestamp": datos_agresor['timestamp'],
@@ -114,6 +139,7 @@ def detectar_match(elemento):
                     dist_zona = geodesic(datos_agresor['coordinates'], zona['place_coordinates']).meters
                     
                     if dist_zona < (distancia_configurada + zona['radius']):
+                        direccion_escape = calcular_direccion_escape(zona['place_coordinates'], datos_agresor['coordinates'])
                         alerta = {
                             "alerta": "place",
                             "activa": True,
@@ -122,6 +148,7 @@ def detectar_match(elemento):
                             "id_place": zona['id_place'],
                             "nombre_place": zona['place_name'], 
                             "distancia_metros": round(dist_zona, 2),
+                            "direccion_escape": direccion_escape,
                             "radio_zona": zona['radius'],
                             "coordenadas_agresor": datos_agresor['coordinates'],
                             "coordenadas_place": zona['place_coordinates'],
