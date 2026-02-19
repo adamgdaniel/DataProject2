@@ -198,3 +198,123 @@ resource "google_project_iam_member" "build_sa_roles" {
   role    = each.value
   member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
+
+resource "google_service_account" "firestore_sa2" {
+  account_id   = "firestore-sa"
+  display_name = "Service Account para Firestore"
+  description  = "Cuenta con permisos mínimos para leer en Firestore"
+}
+
+resource "google_project_iam_member" "firestore_sa_roles" {
+  project = var.project_id
+  role    = "roles/datastore.viewer"
+  member  = "serviceAccount:${google_service_account.firestore_sa2.email}"
+}
+resource "google_service_account_key" "firestore_sa_key" {
+  service_account_id = google_service_account.firestore_sa2.name
+  public_key_type    = "TYPE_X509_PEM_FILE"
+}
+resource "local_file" "service_account_json" {
+  content  = base64decode(google_service_account_key.firestore_sa_key.private_key)
+  filename = "${path.module}/firestore-key.json"
+}
+resource "google_storage_bucket" "dataflow_bucket"{
+  location = var.region
+  name = var.bucket_dataflow
+}
+resource "google_service_account" "dataflow_sa" {
+  account_id   = "dataflow-sa"
+  display_name = "Service Account para Dataflow"
+  description  = "Cuenta con permisos mínimos para ejecutar Dataflow"
+}
+resource "google_project_iam_member" "dataflow_sa_roles" {
+  for_each = toset([
+    "roles/pubsub.subscriber",
+    "roles/datastore.user",
+    "roles/dataflow.worker",     
+    "roles/bigquery.jobUser",
+    "roles/bigquery.dataEditor"
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.dataflow_sa.email}"
+}
+# resource "google_cloudbuild_trigger" "dataflow_deploy_trigger" {
+#   name        = "deploy-dataflow-on-push"
+#   description = "Despliega/Actualiza Dataflow al hacer push a main"
+#   project     = var.project_id
+#   github {
+#     owner = var.github_owner
+#     name  = var.github_repo
+#     push {
+#       branch = "^main$"
+#     }
+#   }
+#   filename = "dataflow/cloudbuild.yaml"
+#   substitutions = {
+#     _SERVICE_ACCOUNT = var.dataflow_sa_email
+#     _REGION          = var.region
+#   }
+#   included_files = ["dataflow/**"]
+# }
+resource "google_service_account" "api_sa" {
+  account_id   = "api-backend-sa"
+  display_name = "Service Account para API Cloud Run"
+  description  = "Cuenta con permisos mínimos para SQL y Pub/Sub"
+}
+  
+resource "google_project_iam_member" "api_sa_roles" {
+  for_each = toset([
+    "roles/cloudsql.client",
+    "roles/pubsub.publisher"
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.api_sa.email}"
+}
+
+resource "google_cloud_run_v2_service" "api_backend" {
+  name     = "api-backend-policia"
+  location = var.region
+
+  template {
+    service_account = google_service_account.api_sa.email
+    
+    containers {
+      image = var.container_image
+      env {
+        name  = "PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "INSTANCE_CONNECTION_NAME"
+        value = google_sql_database_instance.cloud_sql_instance.connection_name
+      }
+      env {
+        name  = "DB_USER"
+        value = var.db_user
+      }
+      env {
+        name  = "DB_NAME"
+        value = google_sql_database.database.name
+      }
+      env {
+        name  = "DB_PASS"
+        value = var.db_password 
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      # Ignora cambios en la imagen (porque Cloud Build pondrá una nueva con cada commit)
+      template[0].containers[0].image,
+      client,
+      client_version,
+      launch_stage
+    ]
+  }
+
+  depends_on = [google_project_iam_member.api_sa_roles] 
+}
