@@ -1,8 +1,3 @@
-terraform {
-  backend "gcs" {
-    bucket  = "bucket-state-tf-dp2"
-  }
-}
 resource "google_pubsub_topic" "victimas_datos" {
     name = var.topic_victimas_datos
 }
@@ -42,6 +37,7 @@ resource "google_storage_bucket" "bucket_victimas_datos" {
     name = var.bucket_imagenes
     location = var.region
 }
+
 resource "google_firestore_database" "firestore_database" {
     name = var.firestore_database
     location_id = var.region
@@ -93,6 +89,10 @@ resource "google_sql_database_instance" "cloud_sql_instance" {
     deletion_protection = false
     settings {
         tier = "db-f1-micro"
+        ip_configuration {
+            ipv4_enabled    = false
+            private_network = "projects/${var.project_id}/global/networks/default" # La red VPC
+        }
     }
 }
 resource "google_sql_database" "database"{
@@ -155,7 +155,8 @@ resource "google_cloud_run_v2_job" "crear_tablas" {
             launch_stage
         ]
     }
-    depends_on = [ google_project_iam_member.cloud_run_roles, google_sql_user.db_user ]
+    depends_on = [ google_project_iam_member.cloud_run_roles, google_sql_user.db_user,
+    docker_registry_image.init_db_push ]
 }
 
 # resource "null_resource" "ejecutar_job" {
@@ -175,6 +176,33 @@ resource "google_artifact_registry_repository" "mi_repo" {
   repository_id = "repo-imagenes-proyecto"
   description   = "Repositorio Docker para Cloud Run"
   format        = "DOCKER"
+}
+
+resource "docker_image" "init_db" {
+  name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/init-db2:latest"
+  build {
+    context = path.module
+    dockerfile = "Dockerfile"
+  }
+}
+
+resource "docker_registry_image" "init_db_push" {
+  name = docker_image.init_db.name
+  keep_remotely = true
+}
+
+# --- IMAGEN 2: GENERADOR ---
+resource "docker_image" "generador" {
+  name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/generador:latest"
+  build {
+    context = "${path.module}/../generador"
+    dockerfile = "Dockerfile"
+  }
+}
+
+resource "docker_registry_image" "generador_push" {
+  name = docker_image.generador.name
+  keep_remotely = true
 }
 
 resource "google_service_account" "cloudbuild_sa" {
@@ -260,13 +288,16 @@ resource "google_project_iam_member" "dataflow_sa_roles" {
 resource "google_service_account" "api_sa" {
   account_id   = "api-backend-sa"
   display_name = "Service Account para API Cloud Run"
-  description  = "Cuenta con permisos mínimos para SQL y Pub/Sub"
+  description  = "Cuenta con permisos para SQL, Pub/Sub y Secret Manager"
 }
   
 resource "google_project_iam_member" "api_sa_roles" {
   for_each = toset([
     "roles/cloudsql.client",
-    "roles/pubsub.publisher"
+    "roles/pubsub.publisher",
+    "roles/secretmanager.secretAccessor",
+    "roles/logging.logWriter",
+    "roles/artifactregistry.writer"
   ])
 
   project = var.project_id
@@ -277,12 +308,21 @@ resource "google_project_iam_member" "api_sa_roles" {
 resource "google_cloud_run_v2_service" "api_backend" {
   name     = "api-backend-policia"
   location = var.region
-
+  deletion_protection = false
   template {
     service_account = google_service_account.api_sa.email
     
+    
+    vpc_access {
+      network_interfaces {
+        network    = "default" 
+        subnetwork = "default" 
+      }
+      egress = "PRIVATE_RANGES_ONLY" 
+    }
+
     containers {
-      image = var.container_image
+      image = var.container_image2
       env {
         name  = "PROJECT_ID"
         value = var.project_id
@@ -299,6 +339,7 @@ resource "google_cloud_run_v2_service" "api_backend" {
         name  = "DB_NAME"
         value = google_sql_database.database.name
       }
+      
       env {
         name  = "DB_PASS"
         value = var.db_password 
@@ -308,7 +349,6 @@ resource "google_cloud_run_v2_service" "api_backend" {
 
   lifecycle {
     ignore_changes = [
-      # Ignora cambios en la imagen (porque Cloud Build pondrá una nueva con cada commit)
       template[0].containers[0].image,
       client,
       client_version,
@@ -316,5 +356,6 @@ resource "google_cloud_run_v2_service" "api_backend" {
     ]
   }
 
-  depends_on = [google_project_iam_member.api_sa_roles] 
+  depends_on = [google_project_iam_member.api_sa_roles,
+  docker_registry_image.generador_push] 
 }
