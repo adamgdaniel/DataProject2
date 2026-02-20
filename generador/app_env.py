@@ -20,7 +20,7 @@ def get_db_connection():
     conn = connector.connect(
         os.getenv("INSTANCE_CONNECTION_NAME"), "pg8000",
         user=os.getenv("DB_USER"), password=os.getenv("DB_PASS"),
-        db=os.getenv("DB_NAME"), ip_type=IPTypes.PUBLIC
+        db=os.getenv("DB_NAME"), ip_type=IPTypes.PRIVATE
     )
     return conn
 
