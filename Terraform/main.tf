@@ -326,7 +326,7 @@ resource "google_cloud_run_v2_service" "api_backend" {
     }
 
     containers {
-      image = var.container_image2
+      image = docker_registry_image.generador_push.name
       env {
         name  = "PROJECT_ID"
         value = var.project_id
@@ -353,7 +353,6 @@ resource "google_cloud_run_v2_service" "api_backend" {
 
   lifecycle {
     ignore_changes = [
-      template[0].containers[0].image,
       client,
       client_version,
       launch_stage
@@ -362,4 +361,12 @@ resource "google_cloud_run_v2_service" "api_backend" {
 
   depends_on = [google_project_iam_member.api_sa_roles,
   docker_registry_image.generador_push] 
+}
+
+resource "google_cloud_run_v2_service_iam_member" "api_invoker" {
+  project  = google_cloud_run_v2_service.api_backend.project
+  location = google_cloud_run_v2_service.api_backend.location
+  name     = google_cloud_run_v2_service.api_backend.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
