@@ -192,11 +192,14 @@ resource "docker_registry_image" "init_db_push" {
 }
 
 # --- IMAGEN 2: GENERADOR ---
+locals {
+  generador_hash = sha1(join("", [for f in fileset("${path.module}/../api", "**") : filesha1("${path.module}/../api/${f}")]))
+}
 resource "docker_image" "generador" {
   name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/api:latest"
   build {
-    context = "${path.module}/../generador"
-    dockerfile = "Dockerfile"
+    context = "${path.module}/../api"
+    dockerfile = "${path.module}/../api/Dockerfile"
   }
   depends_on = [ docker_image.init_db ]
 }
