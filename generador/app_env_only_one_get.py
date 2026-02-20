@@ -3,16 +3,26 @@ import json
 from flask import Flask, jsonify, request
 from datetime import datetime
 from google.cloud import pubsub_v1
+from google.cloud import secretmanager
 from google.cloud.sql.connector import Connector, IPTypes
 import pg8000
 
 app = Flask(__name__)
 PROJECT_ID = os.getenv("PROJECT_ID", "data-project-streaming-487217")
 
-# --- CONEXIONES ---
+# --- CONEXIONES PUBSUB---
 publisher = pubsub_v1.PublisherClient()
 TOPIC_AGRESORES = publisher.topic_path(PROJECT_ID, "agresores-datos")
 TOPIC_VICTIMAS = publisher.topic_path(PROJECT_ID, "victimas-datos")
+
+def obtener_password_secreto():
+    client = secretmanager.SecretManagerServiceClient()
+
+    secret_name = "db-password-dp" 
+    
+    ruta_secreto = f"projects/{PROJECT_ID}/secrets/{secret_name}/versions/latest"
+    respuesta = client.access_secret_version(request={"name": ruta_secreto})
+    return respuesta.payload.data.decode("UTF-8")
 
 def get_db_connection():
     """Crea la conexión segura a Cloud SQL."""
