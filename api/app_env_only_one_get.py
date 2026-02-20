@@ -86,7 +86,6 @@ def obtener_datos_dashboard():
         
         # Devolver el payload gigante con todo estructurado
         return jsonify({
-            "prueba": "prueba",
             "victimas": victimas,
             "agresores": agresores,
             "safe_places": lugares,
