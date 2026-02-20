@@ -193,11 +193,12 @@ resource "docker_registry_image" "init_db_push" {
 
 # --- IMAGEN 2: GENERADOR ---
 resource "docker_image" "generador" {
-  name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/generador:latest"
+  name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/api:latest"
   build {
     context = "${path.module}/../generador"
     dockerfile = "Dockerfile"
   }
+  depends_on = [ docker_image.init_db ]
 }
 
 resource "docker_registry_image" "generador_push" {
