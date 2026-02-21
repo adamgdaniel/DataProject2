@@ -191,7 +191,7 @@ resource "google_artifact_registry_repository" "mi_repo" {
 }
 
 resource "docker_image" "init_db" {
-  name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/init-db2:latest"
+  name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/crear_tablas:latest"
   build {
     context = path.module
     dockerfile = "Dockerfile"

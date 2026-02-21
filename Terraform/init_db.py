@@ -81,7 +81,7 @@ def run():
         """,
         """
         CREATE TABLE IF NOT EXISTS alertas (
-            id_alerta PRIMARY KEY,
+            id_alerta VARCHAR(50) PRIMARY KEY,
             coordenadas_place VARCHAR(50) NOT NULL,
             coordenadas_agresor VARCHAR(50) NOT NULL,
             distancia_limite INTEGER NOT NULL,
