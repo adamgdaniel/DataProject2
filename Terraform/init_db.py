@@ -85,7 +85,7 @@ def run():
             coordenadas_place VARCHAR(50) NOT NULL,
             coordenadas_agresor VARCHAR(50) NOT NULL,
             distancia_limite INTEGER NOT NULL,
-            distancia_metros DOUBLE NOT NULL,
+            distancia_metros DOUBLE PRECISION NOT NULL,
             id_agresor VARCHAR(50) NOT NULL,
             id_victima VARCHAR(50) NOT NULL,
             id_place VARCHAR(50) NOT NULL,
