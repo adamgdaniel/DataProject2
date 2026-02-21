@@ -78,7 +78,7 @@ variable "subscription_agresores_datos"{
 variable "bucket_imagenes"{
     description = "The name of the Cloud Storage bucket for images."
     type = string
-    default = "imagenes-agresores-victimas5"
+    default = "imagenes-agresores-victimas6"
 }
 
 variable "analitical_dataset"{
@@ -121,5 +121,25 @@ variable "db_password" {
 
 variable "container_image"{
     description = "URL image artifact registry"
+    type = string
+}
+variable "container_image2"{
+    description = "URL image artifact registry"
+    type = string
+}
+variable "bucket_dataflow"{
+    description = "Dataflow Bucket Name"
+    type = string
+}
+variable "github_owner"{
+    description = "Github Owner"
+    type = string
+}
+variable "github_repo"{
+    description = "Github Repo"
+    type = string
+}
+variable "dataflow_sa_email"{
+    description = "Dataflow Service Account Email"
     type = string
 }

@@ -1,0 +1,29 @@
+steps:
+  # 1. Construir la imagen Docker usando el SHA del commit
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'build'
+      - '-t'
+      - 'europe-west6-docker.pkg.dev/data-project-streaming-487217/repo-imagenes-proyecto/api-backend:$COMMIT_SHA'
+      - '.'
+
+  # 2. Subir la imagen a Google Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    args: 
+      - 'push'
+      - 'europe-west6-docker.pkg.dev/data-project-streaming-487217/repo-imagenes-proyecto/api-backend:$COMMIT_SHA'
+
+  # 3. Desplegar la nueva imagen en tu Cloud Run
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'api-backend-policia' # Tiene que ser el nombre exacto de tu Cloud Run
+      - '--image'
+      - 'europe-west6-docker.pkg.dev/data-project-streaming-487217/repo-imagenes-proyecto/api-backend:$COMMIT_SHA'
+      - '--region'
+      - 'europe-west6'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

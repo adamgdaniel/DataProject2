@@ -82,7 +82,6 @@ def run():
                 REFERENCES victimas(id_victima) ON DELETE CASCADE
         );
         """,
-
         """
         CREATE TABLE IF NOT EXISTS rel_places_victimas (
             id_victima VARCHAR(50) NOT NULL,
@@ -93,19 +92,7 @@ def run():
             CONSTRAINT fk_rpv_place FOREIGN KEY (id_place) 
                 REFERENCES safe_places(id_place) ON DELETE CASCADE
         );
-        """,
         """
-        CREATE TABLE IF NOT EXISTS denuncias (
-            id_denuncia SERIAL PRIMARY KEY,
-            fecha TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            descripcion TEXT,
-            id_victima VARCHAR(50),
-            CONSTRAINT fk_denuncia_vic FOREIGN KEY (id_victima) 
-                REFERENCES victimas(id_victima)
-        );
-        """
-
-        
     ]
 
     try:

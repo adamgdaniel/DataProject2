@@ -1,6 +1,7 @@
 steps:
   # 1. Construir la imagen Docker usando el SHA del commit como etiqueta (versión única)
   - name: 'gcr.io/cloud-builders/docker'
+    dir: 'Terraform'
     args: [
       'build', 
       '-t', 'europe-west6-docker.pkg.dev/data-project-streaming-487217/repo-imagenes-proyecto/crear_tablas:$COMMIT_SHA', 

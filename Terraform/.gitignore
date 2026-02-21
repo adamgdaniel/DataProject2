@@ -4,3 +4,5 @@ terraform.*
 *.tfstate
 *.tfstate.backup
 *.tfvars
+LICENSE.txt
+firestore-key.json

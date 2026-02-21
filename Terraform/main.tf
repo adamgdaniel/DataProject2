@@ -1,8 +1,3 @@
-terraform {
-  backend "gcs" {
-    bucket  = "bucket-state-tf-dp2"
-  }
-}
 resource "google_pubsub_topic" "victimas_datos" {
     name = var.topic_victimas_datos
 }
@@ -42,6 +37,7 @@ resource "google_storage_bucket" "bucket_victimas_datos" {
     name = var.bucket_imagenes
     location = var.region
 }
+
 resource "google_firestore_database" "firestore_database" {
     name = var.firestore_database
     location_id = var.region
@@ -93,6 +89,10 @@ resource "google_sql_database_instance" "cloud_sql_instance" {
     deletion_protection = false
     settings {
         tier = "db-f1-micro"
+        ip_configuration {
+            ipv4_enabled    = false
+            private_network = "projects/${var.project_id}/global/networks/default" # La red VPC
+        }
     }
 }
 resource "google_sql_database" "database"{
@@ -110,8 +110,12 @@ resource "google_service_account" "cloud_run" {
     display_name = "Service account para Cloud run"
 }
 resource "google_project_iam_member" "cloud_run_roles" {
+    for_each = toset([
+    "roles/logging.logWriter",
+    "roles/cloudsql.client"
+  ])
     project = var.project_id
-    role = "roles/cloudsql.client"  
+    role    = each.value 
     member = "serviceAccount:${google_service_account.cloud_run.email}"
 }
 
@@ -151,7 +155,8 @@ resource "google_cloud_run_v2_job" "crear_tablas" {
             launch_stage
         ]
     }
-    depends_on = [ google_project_iam_member.cloud_run_roles, google_sql_user.db_user ]
+    depends_on = [ google_project_iam_member.cloud_run_roles, google_sql_user.db_user,
+    docker_registry_image.init_db_push ]
 }
 
 # resource "null_resource" "ejecutar_job" {
@@ -171,4 +176,197 @@ resource "google_artifact_registry_repository" "mi_repo" {
   repository_id = "repo-imagenes-proyecto"
   description   = "Repositorio Docker para Cloud Run"
   format        = "DOCKER"
+}
+
+resource "docker_image" "init_db" {
+  name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/init-db2:latest"
+  build {
+    context = path.module
+    dockerfile = "Dockerfile"
+  }
+}
+
+resource "docker_registry_image" "init_db_push" {
+  name = docker_image.init_db.name
+  keep_remotely = true
+}
+
+# --- IMAGEN 2: GENERADOR ---
+locals {
+  generador_hash = sha1(join("", [for f in fileset("${path.module}/../api", "**") : filesha1("${path.module}/../api/${f}")]))
+}
+resource "docker_image" "generador" {
+  name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/api:latest"
+  build {
+    context = "${path.module}/../api"
+    dockerfile = "${path.module}/../api/Dockerfile"
+  }
+  depends_on = [ docker_image.init_db ]
+}
+
+resource "docker_registry_image" "generador_push" {
+  name = docker_image.generador.name
+  keep_remotely = true
+}
+
+resource "google_service_account" "cloudbuild_sa" {
+  account_id   = "my-build-sa"
+  display_name = "Service Account para Cloud Build (Terraform)"
+  description  = "Cuenta con permisos mínimos para desplegar la DB"
+}
+
+resource "google_project_iam_member" "build_sa_roles" {
+  for_each = toset([
+    "roles/logging.logWriter",
+    "roles/artifactregistry.writer",
+    "roles/run.developer",
+    "roles/iam.serviceAccountUser",
+    "roles/storage.objectViewer",
+    "roles/cloudbuild.builds.builder",
+    "roles/developerconnect.readTokenAccessor"
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
+}
+
+resource "google_service_account" "firestore_sa2" {
+  account_id   = "firestore-sa"
+  display_name = "Service Account para Firestore"
+  description  = "Cuenta con permisos mínimos para leer en Firestore"
+}
+
+resource "google_project_iam_member" "firestore_sa_roles" {
+  project = var.project_id
+  role    = "roles/datastore.viewer"
+  member  = "serviceAccount:${google_service_account.firestore_sa2.email}"
+}
+resource "google_service_account_key" "firestore_sa_key" {
+  service_account_id = google_service_account.firestore_sa2.name
+  public_key_type    = "TYPE_X509_PEM_FILE"
+}
+resource "local_file" "service_account_json" {
+  content  = base64decode(google_service_account_key.firestore_sa_key.private_key)
+  filename = "${path.module}/firestore-key.json"
+}
+resource "google_storage_bucket" "dataflow_bucket"{
+  location = var.region
+  name = var.bucket_dataflow
+}
+resource "google_service_account" "dataflow_sa" {
+  account_id   = "dataflow-sa"
+  display_name = "Service Account para Dataflow"
+  description  = "Cuenta con permisos mínimos para ejecutar Dataflow"
+}
+resource "google_project_iam_member" "dataflow_sa_roles" {
+  for_each = toset([
+    "roles/pubsub.subscriber",
+    "roles/datastore.user",
+    "roles/dataflow.worker",     
+    "roles/bigquery.jobUser",
+    "roles/bigquery.dataEditor"
+  ])
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.dataflow_sa.email}"
+}
+# resource "google_cloudbuild_trigger" "dataflow_deploy_trigger" {
+#   name        = "deploy-dataflow-on-push"
+#   description = "Despliega/Actualiza Dataflow al hacer push a main"
+#   project     = var.project_id
+#   github {
+#     owner = var.github_owner
+#     name  = var.github_repo
+#     push {
+#       branch = "^main$"
+#     }
+#   }
+#   filename = "dataflow/cloudbuild.yaml"
+#   substitutions = {
+#     _SERVICE_ACCOUNT = var.dataflow_sa_email
+#     _REGION          = var.region
+#   }
+#   included_files = ["dataflow/**"]
+# }
+resource "google_service_account" "api_sa" {
+  account_id   = "api-backend-sa"
+  display_name = "Service Account para API Cloud Run"
+  description  = "Cuenta con permisos para SQL, Pub/Sub y Secret Manager"
+}
+  
+resource "google_project_iam_member" "api_sa_roles" {
+  for_each = toset([
+    "roles/cloudsql.client",
+    "roles/pubsub.publisher",
+    "roles/secretmanager.secretAccessor",
+    "roles/logging.logWriter",
+    "roles/artifactregistry.writer"
+  ])
+
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.api_sa.email}"
+}
+
+resource "google_cloud_run_v2_service" "api_backend" {
+  name     = "api-backend-policia"
+  location = var.region
+  deletion_protection = false
+  template {
+    service_account = google_service_account.api_sa.email
+    
+    
+    vpc_access {
+      network_interfaces {
+        network    = "default" 
+        subnetwork = "default" 
+      }
+      egress = "PRIVATE_RANGES_ONLY" 
+    }
+
+    containers {
+      image = docker_registry_image.generador_push.name
+      env {
+        name  = "PROJECT_ID"
+        value = var.project_id
+      }
+      env {
+        name  = "INSTANCE_CONNECTION_NAME"
+        value = google_sql_database_instance.cloud_sql_instance.connection_name
+      }
+      env {
+        name  = "DB_USER"
+        value = var.db_user
+      }
+      env {
+        name  = "DB_NAME"
+        value = google_sql_database.database.name
+      }
+      
+      env {
+        name  = "DB_PASS"
+        value = var.db_password 
+      }
+    }
+  }
+
+  lifecycle {
+    ignore_changes = [
+      client,
+      client_version,
+      launch_stage
+    ]
+  }
+
+  depends_on = [google_project_iam_member.api_sa_roles,
+  docker_registry_image.generador_push] 
+}
+
+resource "google_cloud_run_v2_service_iam_member" "api_invoker" {
+  project  = google_cloud_run_v2_service.api_backend.project
+  location = google_cloud_run_v2_service.api_backend.location
+  name     = google_cloud_run_v2_service.api_backend.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
 }
