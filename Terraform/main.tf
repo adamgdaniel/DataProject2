@@ -82,16 +82,25 @@ resource "google_bigquery_dataset" "bigquery_dataset" {
     project = var.project_id
     location = var.region
 }
+data "google_compute_network" "default" {
+  name = "default"
+}
+
+data "google_compute_subnetwork" "default" {
+  name   = "default"
+  region = var.region
+}
 resource "google_sql_database_instance" "cloud_sql_instance" {
     name = var.cloud_sql_instance_name
     database_version = "POSTGRES_15"
     region = var.region
     deletion_protection = false
+    #depends_on = [google_service_networking_connection.private_vpc_connection]
     settings {
         tier = "db-f1-micro"
         ip_configuration {
             ipv4_enabled    = false
-            private_network = "projects/${var.project_id}/global/networks/default" # La red VPC
+            private_network = data.google_compute_network.default.id
         }
     }
 }
@@ -120,43 +129,46 @@ resource "google_project_iam_member" "cloud_run_roles" {
 }
 
 resource "google_cloud_run_v2_job" "crear_tablas" {
-    name = "crear-tablas"
-    location = var.region
+    name                = "crear-tablas"
+    location            = var.region
     deletion_protection = false
+
     template {
-        template{
+        template {
             service_account = google_service_account.cloud_run.email
+            vpc_access {
+                network_interfaces {
+                    network    = data.google_compute_network.default.id
+                    subnetwork = data.google_compute_subnetwork.default.id
+                }
+                egress = "PRIVATE_RANGES_ONLY"
+            }
             containers {
                 image = var.container_image
                 args = [
-                    var.db_user, var.db_password, google_sql_database.database.name, 
-                    google_sql_database_instance.cloud_sql_instance.connection_name
+                    var.db_user, 
+                    var.db_password, 
+                    google_sql_database.database.name, 
+                    google_sql_database_instance.cloud_sql_instance.private_ip_address
                 ]
-                volume_mounts {
-                  name = "cloudsql"
-                  mount_path = "/cloudsql"
-                }
             }
-            volumes {
-                name = "cloudsql"
-                cloud_sql_instance {
-                    instances = [google_sql_database_instance.cloud_sql_instance.connection_name]
-                }
-            }
+            
         }
     }
     lifecycle {
         ignore_changes = [
-            # Ignora cambios en la imagen (porque Cloud Build pondrá una nueva con cada commit)
             template[0].template[0].containers[0].image,
-            
             client,
             client_version,
             launch_stage
         ]
     }
-    depends_on = [ google_project_iam_member.cloud_run_roles, google_sql_user.db_user,
-    docker_registry_image.init_db_push ]
+    depends_on = [ 
+        google_project_iam_member.cloud_run_roles, 
+        google_sql_user.db_user,
+        docker_registry_image.init_db_push,
+        google_sql_database_instance.cloud_sql_instance
+    ]
 }
 
 # resource "null_resource" "ejecutar_job" {

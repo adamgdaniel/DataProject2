@@ -1,48 +1,34 @@
 import sys
 import sqlalchemy
 from sqlalchemy import text
-import os
 import time
 
 def run():
+    # Seguimos esperando 4 argumentos, pero el último ahora será la IP Privada
     if len(sys.argv) < 5:
         print(f"ERROR: Se esperaban 4 argumentos. Recibidos: {sys.argv}")
-        args_safe = [sys.argv[0]] + [sys.argv[1], "*****", sys.argv[3], sys.argv[4]]
         sys.exit(1)
 
     user = sys.argv[1]
     password = sys.argv[2]
     db_name = sys.argv[3]
-    instance_connection = sys.argv[4]
+    db_host = sys.argv[4] # <- Aquí debes pasar la IP Privada de la BBDD (ej. 10.x.x.x)
+    db_port = 5432 # Puerto por defecto de PostgreSQL
 
-    print(f"--- INICIO DIAGNÓSTICO ---")
-    print(f"Buscando socket para: {instance_connection}")
-    
-    socket_dir = f"/cloudsql/{instance_connection}"
-    
-    # Verificamos si existe la carpeta raíz /cloudsql
-    if os.path.exists("/cloudsql"):
-        print(f"La carpeta /cloudsql existe. Contenido: {os.listdir('/cloudsql')}")
-    else:
-        print(f"ERROR FATAL: La carpeta /cloudsql NO existe. Revisa 'volume_mounts' en Terraform.")
-    
-    # Verificamos si existe la carpeta de la instancia
-    if os.path.exists(socket_dir):
-        print(f"La carpeta de la instancia {socket_dir} existe. Contenido: {os.listdir(socket_dir)}")
-    else:
-        print(f"ERROR FATAL: No se encuentra la carpeta {socket_dir}. ¿Es correcto el connection_name?")
+    print(f"--- INICIO CONEXIÓN ---")
+    print(f"Intentando conectar a la BBDD '{db_name}' en la IP Privada: {db_host}:{db_port}")
 
-    print(f"--- FIN DIAGNÓSTICO ---")
-
-    socket_path = f"/cloudsql/{instance_connection}/.s.PGSQL.5432"
-    
+    # Creamos la URL para conexión TCP tradicional
     db_url = sqlalchemy.engine.url.URL.create(
         drivername="postgresql+pg8000",
         username=user,
         password=password,
+        host=db_host,
+        port=db_port,
         database=db_name,
-        query={"unix_sock": socket_path},
+        # Eliminamos la parte de query={"unix_sock": socket_path}
     )
+    
     engine = sqlalchemy.create_engine(db_url)
 
     sql_commands = [
@@ -92,12 +78,27 @@ def run():
             CONSTRAINT fk_rpv_place FOREIGN KEY (id_place) 
                 REFERENCES safe_places(id_place) ON DELETE CASCADE
         );
+        """,
+        """
+        CREATE TABLE IF NOT EXISTS alertas (
+            id_alerta PRIMARY KEY,
+            coordenadas_place VARCHAR(50) NOT NULL,
+            coordenadas_agresor VARCHAR(50) NOT NULL,
+            distancia_limite INTEGER NOT NULL,
+            distancia_metros DOUBLE NOT NULL,
+            id_agresor VARCHAR(50) NOT NULL,
+            id_victima VARCHAR(50) NOT NULL,
+            id_place VARCHAR(50) NOT NULL,
+            nombre_place VARCHAR(100) NOT NULL,
+            radio_zona INTEGER NOT NULL,
+            timestamp VARCHAR(50) NOT NULL
+        );
         """
     ]
 
     try:
         with engine.connect() as conn:
-            print(f"Conectado exitosamente a {db_name}. Creando tablas...")
+            print(f"Conectado exitosamente a {db_name} en {db_host}. Creando tablas...")
             for command in sql_commands:
                 conn.execute(text(command))
             conn.commit()
