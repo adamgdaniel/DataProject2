@@ -68,8 +68,8 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
             yield (id_agresor, datos_victima)
 
 def calcular_direccion_escape(coords_victima, coords_agresor):
-    lat_v, lon_v = coords_victima
-    lat_a, lon_a = coords_agresor
+    lat_v, lon_v = map(float, coords_victima.split(','))
+    lat_a, lon_a = map(float, coords_agresor.split(','))
 
     d_lat = lat_a - lat_v
     d_lon = lon_a - lon_v

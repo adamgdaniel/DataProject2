@@ -74,39 +74,39 @@ class SafetyMovementGenerator:
 
         while True:
             try:
-                # ==========================================
-                # 🔥 HACK DEMO: FORZAR ESCENARIOS FIJOS 🔥
-                # ==========================================
+                # # ==========================================
+                # # 🔥 HACK DEMO: FORZAR ESCENARIOS FIJOS 🔥
+                # # ==========================================
                 
-                # --- ESCENARIO 1: MATCH FÍSICO (Cercanía) ---
-                if user_id == "vic_001":
-                    # Usamos coordenadas cerca de Tatooine (plc_004) para que sea realista
-                    payload = {"user_id": user_id, "coordinates": [39.469900, -0.376000], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
-                    self.send_to_api(payload, role)
-                    time.sleep(5)
-                    continue
+                # # --- ESCENARIO 1: MATCH FÍSICO (Cercanía) ---
+                # if user_id == "vic_001":
+                #     # Usamos coordenadas cerca de Tatooine (plc_004) para que sea realista
+                #     payload = {"user_id": user_id, "coordinates": [39.469900, -0.376000], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
+                #     self.send_to_api(payload, role)
+                #     time.sleep(5)
+                #     continue
                     
-                elif user_id == "agr_001":
-                    # Agresor 1 pegado a Víctima 1 (Diferencia de 0.00005)
-                    payload = {"user_id": user_id, "coordinates": [39.469950, -0.376050], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
-                    self.send_to_api(payload, role)
-                    time.sleep(5)
-                    continue
+                # elif user_id == "agr_001":
+                #     # Agresor 1 pegado a Víctima 1 (Diferencia de 0.00005)
+                #     payload = {"user_id": user_id, "coordinates": [39.469950, -0.376050], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
+                #     self.send_to_api(payload, role)
+                #     time.sleep(5)
+                #     continue
 
-                # --- ESCENARIO 2: INVASIÓN DE ZONA SEGURA ---
-                elif user_id == "vic_002":
-                    # Víctima 2 está en 'Estrella de la Muerte' (Coordenadas exactas de tu BBDD)
-                    payload = {"user_id": user_id, "coordinates": [39.455000, -0.350500], "kmh": 0, "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
-                    self.send_to_api(payload, role)
-                    time.sleep(5)
-                    continue
+                # # --- ESCENARIO 2: INVASIÓN DE ZONA SEGURA ---
+                # elif user_id == "vic_002":
+                #     # Víctima 2 está en 'Estrella de la Muerte' (Coordenadas exactas de tu BBDD)
+                #     payload = {"user_id": user_id, "coordinates": [39.455000, -0.350500], "kmh": 0, "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
+                #     self.send_to_api(payload, role)
+                #     time.sleep(5)
+                #     continue
 
-                elif user_id == "agr_002":
-                    # Agresor 2 irrumpe en la Estrella de la Muerte (A pocos metros de distancia)
-                    payload = {"user_id": user_id, "coordinates": [39.455020, -0.350520], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
-                    self.send_to_api(payload, role)
-                    time.sleep(5)
-                    continue
+                # elif user_id == "agr_002":
+                #     # Agresor 2 irrumpe en la Estrella de la Muerte (A pocos metros de distancia)
+                #     payload = {"user_id": user_id, "coordinates": [39.455020, -0.350520], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
+                #     self.send_to_api(payload, role)
+                #     time.sleep(5)
+                #     continue
                 # ==========================================
 
                 # ==========================================
