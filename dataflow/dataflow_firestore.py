@@ -13,6 +13,7 @@ import psycopg2
 from google.cloud import firestore
 import math
 from dotenv import load_dotenv
+from google.cloud import secretmanager
 
 load_dotenv()
 
@@ -165,18 +166,24 @@ def detectar_match(elemento):
 
 class CargarDatosMaestros(beam.DoFn):
 
-    def __init__(self, db_host, db_user, db_pass, db_name):
+    def __init__(self, project_id, db_host, db_user, secret_pass, db_name):
+            self.project_id = project_id
             self.db_host = db_host
             self.db_user = db_user
-            self.db_pass = db_pass
             self.db_name = db_name
+            self.secret_pass = secret_pass
+            
 
     def start_bundle(self):
+        client = secretmanager.SecretManagerServiceClient()
+        ruta_secreto = f"projects/{self.project_id}/secrets/{self.secret_pass}/versions/latest"
+        respuesta = client.access_secret_version(request={"name": ruta_secreto})
+        db_pass_seguro = respuesta.payload.data.decode("UTF-8")
         import psycopg2
         self.conn = psycopg2.connect(
             host=self.db_host, 
             user=self.db_user,
-            password=self.db_pass,
+            password=db_pass_seguro,
             dbname=self.db_name
         )
 
@@ -331,7 +338,7 @@ def run():
     #info de la db
     parser.add_argument('--db_host', required=True)
     parser.add_argument('--db_user', required=True)
-    parser.add_argument('--db_pass', required=True)
+    parser.add_argument('--db_pass', required=False, default="db-password-dp")
     parser.add_argument('--db_name', required=True)
     
     # Parseamos los argumentos
@@ -353,7 +360,7 @@ def run():
             p
             | "Reloj" >> PeriodicImpulse(fire_interval=900, apply_windowing=True)
             | "VentanaGlobal" >> beam.WindowInto(window.GlobalWindows(), trigger=trigger.Repeatedly(trigger.AfterCount(1)), accumulation_mode=trigger.AccumulationMode.DISCARDING)
-            | "CargarDB" >> beam.ParDo(CargarDatosMaestros(db_host=known_args.db_host, db_user=known_args.db_user, db_pass=known_args.db_pass, db_name=known_args.db_name))
+            | "CargarDB" >> beam.ParDo(CargarDatosMaestros(project_id=known_args.project_id,db_host=known_args.db_host, db_user=known_args.db_user, secret_pass=known_args.db_pass, db_name=known_args.db_name))
             )
 
         vista_datos_maestros = beam.pvalue.AsSingleton(datos_side_input, default_value={})
