@@ -368,7 +368,9 @@ resource "google_project_iam_member" "build_sa_roles" {
     "roles/cloudbuild.builds.builder",
     "roles/developerconnect.readTokenAccessor",
     "roles/cloudbuild.builds.editor",
-    "roles/storage.objectAdmin"
+    "roles/storage.objectAdmin",
+    "roles/dataflow.developer",
+    "roles/iam.serviceAccountUser"
   ])
 
   project = var.project_id
