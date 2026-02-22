@@ -68,11 +68,11 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
             yield (id_agresor, datos_victima)
 
 def calcular_direccion_escape(coords_victima, coords_agresor):
-    lat_v, lon_v = map(float, coords_victima.split(','))
-    lat_a, lon_a = map(float, coords_agresor.split(','))
+    lat_v, lon_v = coords_victima[0], coords_victima[1]
+    lat_a, lon_a = coords_agresor[0], coords_agresor[1]
 
-    d_lat = lat_a - lat_v
-    d_lon = lon_a - lon_v
+    d_lat = float(lat_a) - float(lat_v)
+    d_lon = float(lon_a) - float(lon_v)
 
     # Calculamos el ángulo en grados
     angulo = math.degrees(math.atan2(d_lat, d_lon))
