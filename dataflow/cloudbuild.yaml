@@ -31,22 +31,22 @@ steps:
     ]
     waitFor: ['Build Dataflow Flex Template']
   # 3. Registrar la Flex Template MANUALMENTE (Nos saltamos el bug de gcloud)
-  - name: 'gcr.io/cloud-builders/gsutil'
-    entrypoint: 'bash'
-    dir: 'dataflow'
-    args:
-      - '-c'
-      - |
-        # Escribimos las 4 líneas del JSON que Dataflow necesita
-        cat <<EOF > template.json
-        {
-          "image": "$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA",
-          "sdkInfo": {"language": "PYTHON"}
-        }
-        EOF
+  # - name: 'gcr.io/cloud-builders/gsutil'
+  #   entrypoint: 'bash'
+  #   dir: 'dataflow'
+  #   args:
+  #     - '-c'
+  #     - |
+  #       # Escribimos las 4 líneas del JSON que Dataflow necesita
+  #       cat <<EOF > template.json
+  #       {
+  #         "image": "$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA",
+  #         "sdkInfo": {"language": "PYTHON"}
+  #       }
+  #       EOF
         
-        # Lo subimos directamente a tu bucket
-        gsutil cp template.json gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json
+  #       # Lo subimos directamente a tu bucket
+  #       gsutil cp template.json gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json
 options:
   logging: CLOUD_LOGGING_ONLY
 
