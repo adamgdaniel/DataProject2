@@ -120,7 +120,6 @@ def detectar_match(elemento):
                 alerta = {
                     "alerta": "fisica",
                     "activa": True,
-                    "nivel": "CRITICO",
                     "id_victima": vic['user_id'],
                     "id_agresor": id_agresor,
                     "distancia_metros": dist_fisica,
@@ -154,7 +153,7 @@ def detectar_match(elemento):
                             "coordenadas_agresor": datos_agresor['coordinates'],
                             "coordenadas_place": zona['place_coordinates'],
                             "timestamp": datos_agresor['timestamp'],
-                            "distancia_limite": distancia_configurada,
+                            "dist_seguridad": distancia_configurada,
                         }
                         alertas_json.append(alerta)
                         print(f"🏰 JSON ALERTA GENERADO (Place): {alerta}") 
@@ -172,9 +171,10 @@ class CargarDatosMaestros(beam.DoFn):
             self.db_user = db_user
             self.db_name = db_name
             self.secret_pass = secret_pass
+            self.conn = None
             
 
-    def start_bundle(self):
+    def setup(self):
         client = secretmanager.SecretManagerServiceClient()
         ruta_secreto = f"projects/{self.project_id}/secrets/{self.secret_pass}/versions/latest"
         respuesta = client.access_secret_version(request={"name": ruta_secreto})
@@ -196,7 +196,7 @@ class CargarDatosMaestros(beam.DoFn):
                     # --- 1. Cargar Agresores-Víctimas ---
             cursor.execute("SELECT id_victima, id_agresor, dist_seguridad FROM rel_victimas_agresores")
             for vic, agr, dist in cursor.fetchall():
-                vic, agr = str(vic), str(agr)
+                vic, agr = str(vic).strip(), str(agr).strip()
                 dist_seguridad = float(dist) if dist is not None else 500.0
                 if vic not in datos_maestros:
                     datos_maestros[vic] = {'agresores': {}, 'zonas': []}
@@ -234,7 +234,7 @@ class CargarDatosMaestros(beam.DoFn):
         #           {"place_name": "Comisaría Centro", "id_place": "place_001", "place_coordinates": (39.4700, -0.3765), "radius": 300}
 
 
-    def finish_bundle(self):
+    def teardown(self):
         if self.conn:
             self.conn.close()
 
@@ -316,29 +316,22 @@ def run():
                 required=False,
                 default= "victimas-alertas",
                 help='Pub/Sub topic for victim notifications.')
-
-    
-
     
     parser.add_argument(
                 '--bigquery_dataset',
                 required=False,
-                help='BigQuery dataset name.')
+                default="analitical_dataset_test",
+                help='BigQuery dataset name.')    
     
     parser.add_argument(
-                '--user_bigquery_table',
-                required=False,
-                help='User BigQuery table name.')
-    
-    parser.add_argument(
-                '--episode_bigquery_table',
-                required=False,
-                help='Episode BigQuery table name.')
+                '--alertas_bigquery_table',
+                required=True,
+                help='Alertas BigQuery table name.')
     
     #info de la db
     parser.add_argument('--db_host', required=True)
     parser.add_argument('--db_user', required=True)
-    parser.add_argument('--db_pass', required=False, default="db-password-dp")
+    parser.add_argument('--db_pass', required=False, default="db-password-dp") 
     parser.add_argument('--db_name', required=True)
     
     # Parseamos los argumentos
@@ -352,8 +345,9 @@ def run():
     # Nombres de suscripciones
     sub_v = f"projects/{known_args.project_id}/subscriptions/{known_args.victimas_pubsub_subscription_name}"
     sub_a = f"projects/{known_args.project_id}/subscriptions/{known_args.agresores_pubsub_subscription_name}"
-    topic_policia = f"projects/{known_args.project_id}/topics/{known_args.alertas_policia_topic}"
     firestore_database = known_args.firestore_db
+    ruta_bq = f"{known_args.project_id}:{known_args.bigquery_dataset}.{known_args.alertas_bigquery_table}"
+    esquema_alertas = "alerta:STRING, activa:BOOLEAN, nivel:STRING, id_victima:STRING, id_agresor:STRING, distancia_metros:FLOAT, direccion_escape:STRING, coordenadas_agresor:STRING, coordenadas_victima:STRING, coordenadas_place:STRING, timestamp:TIMESTAMP, dist_seguridad:FLOAT, distancia_limite:FLOAT, id_place:STRING, nombre_place:STRING, radio_zona:FLOAT"
    
     with beam.Pipeline(options=options) as p:
         datos_side_input = (
@@ -383,16 +377,28 @@ def run():
         )
 
         # Match
-        (
+        alertas = (
             (victimas, agresores)
             | "UnirTodo" >> beam.Flatten()
             | "Ventana15s" >> beam.WindowInto(FixedWindows(15))
             | "Agrupar" >> beam.GroupByKey() #juntamos en base a key que es el agresor id
             | "Calcular" >> beam.FlatMap(detectar_match)
-            | "EnviarFirestore" >> beam.ParDo(FormatFirestoreDocument(firestore_collection=known_args.firestore_collection, project_id=known_args.project_id, firestore_database=firestore_database))
-            | "Serializar" >> beam.Map(jsonEncode)
-            | "EnviarPolicia" >> beam.io.WriteToPubSub(topic=topic_policia)
         )
+
+
+        (alertas
+         | "EnviarFirestore" >> beam.ParDo(FormatFirestoreDocument(firestore_collection=known_args.firestore_collection, project_id=known_args.project_id, firestore_database=firestore_database))
+         )
+
+
+        (alertas
+         | "EscribirBQ" >> beam.io.WriteToBigQuery(
+                table=ruta_bq,
+                schema=esquema_alertas,
+                write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
+                create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
+            ))
+
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.INFO)
