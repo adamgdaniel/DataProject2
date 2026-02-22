@@ -300,27 +300,12 @@ def run():
             '--firestore_collection',
             required=True,
             help='Firestore collection name.')
-    
-    parser.add_argument(
-                '--alertas_policia_topic',
-                required=False,
-                default="policia-alertas",
-                help='Pub/Sub topic for police notifications.')
-    parser.add_argument(
-                '--alertas_agresores_topic',
-                required=False,
-                default= "agresores-alertas",
-                help='Pub/Sub topic for agressor notifications.')
-    parser.add_argument(
-                '--alertas_victimas_topic',
-                required=False,
-                default= "victimas-alertas",
-                help='Pub/Sub topic for victim notifications.')
+
     
     parser.add_argument(
                 '--bigquery_dataset',
                 required=False,
-                default="analitical_dataset_test",
+                default="analitical_dataset5",
                 help='BigQuery dataset name.')    
     
     parser.add_argument(
