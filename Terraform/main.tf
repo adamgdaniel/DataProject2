@@ -1,3 +1,11 @@
+
+resource "google_project_service" "datastream_api" {
+  project = var.project_id
+  service = "datastream.googleapis.com"
+
+  disable_on_destroy = false
+
+}
 resource "google_pubsub_topic" "victimas_datos" {
     name = var.topic_victimas_datos
 }
@@ -82,27 +90,140 @@ resource "google_bigquery_dataset" "bigquery_dataset" {
     project = var.project_id
     location = var.region
 }
-data "google_compute_network" "default" {
-  name = "default"
-}
 
-data "google_compute_subnetwork" "default" {
-  name   = "default"
-  region = var.region
+resource "google_bigquery_table" "tabla_alertas" {
+  dataset_id          = google_bigquery_dataset.bigquery_dataset.dataset_id
+  table_id            = "alertas"
+  deletion_protection = false 
+
+  table_constraints {
+    primary_key {
+      columns = ["alerta"]
+    }
+  }
+
+  time_partitioning {
+    type  = "HOUR"
+    field = "timestamp"
+  }
+
+  # Esquema completo de la tabla
+  schema = <<EOF
+[
+  {
+    "name": "alerta",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "activa",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "nivel",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "id_victima",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "id_agresor",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "distancia_metros",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "direccion_escape",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "coordenadas_agresor",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "coordenadas_victima",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "coordenadas_place",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "dist_seguridad",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "distancia_limite",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "id_place",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "nombre_place",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "radio_zona",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  }
+]
+EOF
 }
+resource "google_compute_global_address" "datastream_range_nuevo" {
+  name          = "rango-datastream-v4"
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 16
+  network       = "projects/${var.project_id}/global/networks/default"
+}
+# resource "google_service_networking_connection" "private_vpc_connection" {
+#   network                 = "projects/${var.project_id}/global/networks/default"
+#   service                 = "servicenetworking.googleapis.com"
+#   reserved_peering_ranges = [google_compute_global_address.datastream_range_nuevo.name ]
+# }
+
 resource "google_sql_database_instance" "cloud_sql_instance" {
     name = var.cloud_sql_instance_name
     database_version = "POSTGRES_15"
     region = var.region
     deletion_protection = false
-    #depends_on = [google_service_networking_connection.private_vpc_connection]
     settings {
         tier = "db-f1-micro"
+        database_flags {
+          name = "cloudsql.logical_decoding"
+          value = "on"
+          }
         ip_configuration {
             ipv4_enabled    = false
-            private_network = data.google_compute_network.default.id
+            private_network = "projects/${var.project_id}/global/networks/default" # La red VPC
+            enable_private_path_for_google_cloud_services = true
         }
     }
+    #depends_on = [google_service_networking_connection.private_vpc_connection]
 }
 resource "google_sql_database" "database"{
     name = var.cloud_sql_instance_name
@@ -136,13 +257,13 @@ resource "google_cloud_run_v2_job" "crear_tablas" {
     template {
         template {
             service_account = google_service_account.cloud_run.email
-            vpc_access {
-                network_interfaces {
-                    network    = data.google_compute_network.default.id
-                    subnetwork = data.google_compute_subnetwork.default.id
-                }
-                egress = "PRIVATE_RANGES_ONLY"
-            }
+            # vpc_access {
+            #     network_interfaces {
+            #         network    = data.google_compute_network.default.id
+            #         subnetwork = data.google_compute_subnetwork.default.id
+            #     }
+            #     egress = "PRIVATE_RANGES_ONLY"
+            # }
             containers {
                 image = var.container_image
                 args = [
@@ -151,6 +272,16 @@ resource "google_cloud_run_v2_job" "crear_tablas" {
                     google_sql_database.database.name, 
                     google_sql_database_instance.cloud_sql_instance.private_ip_address
                 ]
+            #     volume_mounts {
+            #       name = "cloudsql"
+            #       mount_path = "/cloudsql"
+            #     }
+            # }
+            # volumes {
+            #     name = "cloudsql"
+            #     cloud_sql_instance {
+            #         instances = [google_sql_database_instance.cloud_sql_instance.connection_name]
+            #     }
             }
             
         }
@@ -331,8 +462,8 @@ resource "google_cloud_run_v2_service" "api_backend" {
     
     vpc_access {
       network_interfaces {
-        network    = "default" 
-        subnetwork = "default" 
+         network    = "projects/${var.project_id}/global/networks/default" 
+        subnetwork = "projects/${var.project_id}/regions/${var.region}/subnetworks/default"  
       }
       egress = "PRIVATE_RANGES_ONLY" 
     }
@@ -382,3 +513,102 @@ resource "google_cloud_run_v2_service_iam_member" "api_invoker" {
   role     = "roles/run.invoker"
   member   = "allUsers"
 }
+resource "google_compute_firewall" "allow_datastream_to_sql" {
+  name    = "allow-datastream-to-sql"
+  network = "default" 
+
+  allow {
+    protocol = "tcp"
+    ports    = ["5432"]
+  }
+  source_ranges = ["10.2.0.0/29"] 
+  
+
+}
+
+
+
+# 1. EL TÚNEL SECRETO (Private Connection)
+# Como la BD no tiene IP pública, Datastream necesita un túnel VPN hacia tu red.
+resource "google_datastream_private_connection" "private_connection" {
+  display_name          = "Conexión privada Datastream"
+  location              = var.region
+  private_connection_id = "datastream-private-conn"
+
+  vpc_peering_config {
+    vpc    = "projects/${var.project_id}/global/networks/default"
+    subnet = "10.2.0.0/29" 
+  }
+  depends_on = [ google_project_service.datastream_api ]
+}
+
+# 2. EL PERFIL DE ORIGEN (La conexión a Cloud SQL)
+# resource "google_datastream_connection_profile" "postgres_source" {
+#   display_name          = "Origen Cloud SQL"
+#   location              = var.region
+#   connection_profile_id = "cloudsql-source-profile"
+
+#   postgresql_profile {
+#     hostname = google_sql_database_instance.cloud_sql_instance.private_ip_address
+#     port     = 5432
+#     username = var.db_user
+#     password = var.db_password
+#     database = google_sql_database.database.name
+#   }
+
+#   # Le decimos que use el túnel que creamos arriba
+#   private_connectivity {
+#     private_connection = google_datastream_private_connection.private_connection.id
+#   }
+#   depends_on = [
+#     google_project_service.datastream_api,
+#     google_compute_firewall.allow_datastream_to_sql
+#     ]
+# }
+
+# # 3. EL PERFIL DE DESTINO (La conexión a BigQuery)
+# resource "google_datastream_connection_profile" "bigquery_dest" {
+#   display_name          = "Destino BigQuery"
+#   location              = var.region
+#   connection_profile_id = "bigquery-dest-profile"
+
+#   bigquery_profile {}
+#   depends_on = [ google_project_service.datastream_api ]
+# }
+
+# # 4. LA TUBERÍA (El Stream que une todo)
+# resource "google_datastream_stream" "cloudsql_to_bq" {
+#   display_name  = "Replicacion BBDD a BigQuery"
+#   location      = var.region
+#   stream_id     = "replicacion-bq"
+#   desired_state = "RUNNING" 
+
+#   source_config {
+#     source_connection_profile = google_datastream_connection_profile.postgres_source.id
+#     postgresql_source_config {
+#       replication_slot = "datastream_slot" ##funciona como un marcapáginas, para saber por donde se quedó leyendo
+#       publication      = "datastream_pub"
+#     }
+#   }
+
+#   destination_config {
+#     destination_connection_profile = google_datastream_connection_profile.bigquery_dest.id
+#     bigquery_destination_config {
+#       data_freshness = "0s" # Tiempo real absoluto
+#       single_target_dataset {
+#         dataset_id = google_bigquery_dataset.bigquery_dataset.dataset_id
+#       }
+#     }
+#   }
+  
+
+
+#   # Esto hace que copie los datos que ya existan, además de los nuevos
+#   backfill_all {} 
+
+#   # Terraform debe esperar a que el túnel exista antes de crear la tubería
+#   depends_on = [
+#     google_project_service.datastream_api,
+#     google_datastream_private_connection.private_connection
+#   ]
+# }

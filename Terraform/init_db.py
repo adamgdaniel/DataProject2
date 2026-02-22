@@ -12,21 +12,16 @@ def run():
     user = sys.argv[1]
     password = sys.argv[2]
     db_name = sys.argv[3]
-    db_host = sys.argv[4] # <- Aquí debes pasar la IP Privada de la BBDD (ej. 10.x.x.x)
-    db_port = 5432 # Puerto por defecto de PostgreSQL
+    db_host = sys.argv[4] 
+    db_port = 5432
 
-    print(f"--- INICIO CONEXIÓN ---")
-    print(f"Intentando conectar a la BBDD '{db_name}' en la IP Privada: {db_host}:{db_port}")
-
-    # Creamos la URL para conexión TCP tradicional
     db_url = sqlalchemy.engine.url.URL.create(
         drivername="postgresql+pg8000",
         username=user,
         password=password,
         host=db_host,
         port=db_port,
-        database=db_name,
-        # Eliminamos la parte de query={"unix_sock": socket_path}
+        database=db_name
     )
     
     engine = sqlalchemy.create_engine(db_url)
@@ -77,21 +72,6 @@ def run():
                 REFERENCES victimas(id_victima) ON DELETE CASCADE,
             CONSTRAINT fk_rpv_place FOREIGN KEY (id_place) 
                 REFERENCES safe_places(id_place) ON DELETE CASCADE
-        );
-        """,
-        """
-        CREATE TABLE IF NOT EXISTS alertas (
-            id_alerta VARCHAR(50) PRIMARY KEY,
-            coordenadas_place VARCHAR(50) NOT NULL,
-            coordenadas_agresor VARCHAR(50) NOT NULL,
-            distancia_limite INTEGER NOT NULL,
-            distancia_metros DOUBLE PRECISION NOT NULL,
-            id_agresor VARCHAR(50) NOT NULL,
-            id_victima VARCHAR(50) NOT NULL,
-            id_place VARCHAR(50) NOT NULL,
-            nombre_place VARCHAR(100) NOT NULL,
-            radio_zona INTEGER NOT NULL,
-            timestamp VARCHAR(50) NOT NULL
         );
         """
     ]
