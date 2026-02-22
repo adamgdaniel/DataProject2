@@ -19,9 +19,10 @@ steps:
     id: Run Dataflow Flex Template
     args: ['dataflow', 'flex-template', 'run', '$_DATAFLOW_JOB_NAME',
            '--template-file-gcs-location=gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json',
-           # Eliminado db_pass de los parámetros
-           '--parameters=project_id=$PROJECT_ID,victimas_pubsub_subscription_name=$_VICTIMAS_PUBSUB_SUBSCRIPTION_NAME,agresores_pubsub_subscription_name=$_AGRESORES_PUBSUB_SUBSCRIPTION_NAME,firestore_db=$_FIRESTORE_DB,firestore_collection=$_FIRESTORE_COLLECTION_NAME,alertas_policia_topic=$_NOTIFICATIONS_PUBSUB_TOPIC_NAME,db_host=$_DB_HOST,db_user=$_DB_USER,db_name=$_DB_NAME',
+           # Aquí hemos añadido bigquery_dataset y alertas_bigquery_table a los parámetros de tu script
+           '--parameters=project_id=$PROJECT_ID,victimas_pubsub_subscription_name=$_VICTIMAS_PUBSUB_SUBSCRIPTION_NAME,agresores_pubsub_subscription_name=$_AGRESORES_PUBSUB_SUBSCRIPTION_NAME,firestore_db=$_FIRESTORE_DB,firestore_collection=$_FIRESTORE_COLLECTION_NAME,alertas_policia_topic=$_NOTIFICATIONS_PUBSUB_TOPIC_NAME,db_host=$_DB_HOST,db_user=$_DB_USER,db_name=$_DB_NAME,bigquery_dataset=$_BIGQUERY_DATASET,alertas_bigquery_table=$_ALERTAS_BIGQUERY_TABLE',
            '--region=$_REGION_ID',
+           '--subnetwork=$_SUBNETWORK', # El subnetwork va como flag nativo de gcloud, no dentro de --parameters
            '--staging-location=gs://$_DATAFLOW_BASE_BUCKET/staging',
            '--temp-location=gs://$_DATAFLOW_BASE_BUCKET/temp',
            '--service-account-email=$_SERVICE_ACCOUNT', 
@@ -37,7 +38,7 @@ substitutions:
   _REGION_ID: 'europe-west6'
   _DATAFLOW_BASE_BUCKET: 'bucket-edem-data-project-2' 
   _DATAFLOW_TEMPLATE_NAME: 'plantilla-policia'
-  _DATAFLOW_JOB_NAME: 'dataproject2dataflow'
+  _DATAFLOW_JOB_NAME: 'dataproject2dataflowv3' # Actualizado para coincidir con tu comando local
   _SERVICE_ACCOUNT: 'dataflow-sa@data-project-streaming-487217.iam.gserviceaccount.com'
   
   _ARTIFACT_REGISTRY_REPOSITORY: 'repo-imagenes-proyecto' 
@@ -52,7 +53,11 @@ substitutions:
   
   _FIRESTORE_DB: 'firestore-database5'
   _FIRESTORE_COLLECTION_NAME: 'alertas'
-  
-  _DB_HOST: '172.25.64.3' 
+ 
   _DB_USER: 'admin_user'
   _DB_NAME: 'victimas'
+  
+  # --- NUEVOS PARÁMETROS AÑADIDOS ---
+  _BIGQUERY_DATASET: 'analitical_dataset5'
+  _ALERTAS_BIGQUERY_TABLE: 'alertas'
+  _SUBNETWORK: 'regions/europe-west6/subnetworks/default'
