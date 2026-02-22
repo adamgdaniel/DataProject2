@@ -200,18 +200,17 @@ resource "google_compute_global_address" "datastream_range_nuevo" {
   prefix_length = 16
   network       = "projects/${var.project_id}/global/networks/default"
 }
-resource "google_service_networking_connection" "private_vpc_connection" {
-  network                 = "projects/${var.project_id}/global/networks/default"
-  service                 = "servicenetworking.googleapis.com"
-  reserved_peering_ranges = [google_compute_global_address.datastream_range_nuevo.name ]
-}
+# resource "google_service_networking_connection" "private_vpc_connection" {
+#   network                 = "projects/${var.project_id}/global/networks/default"
+#   service                 = "servicenetworking.googleapis.com"
+#   reserved_peering_ranges = [google_compute_global_address.datastream_range_nuevo.name ]
+# }
 
 resource "google_sql_database_instance" "cloud_sql_instance" {
     name = var.cloud_sql_instance_name
     database_version = "POSTGRES_15"
     region = var.region
     deletion_protection = false
-    #depends_on = [google_service_networking_connection.private_vpc_connection]
     settings {
         tier = "db-f1-micro"
         database_flags {
@@ -224,7 +223,7 @@ resource "google_sql_database_instance" "cloud_sql_instance" {
             enable_private_path_for_google_cloud_services = true
         }
     }
-    depends_on = [google_service_networking_connection.private_vpc_connection]
+    #depends_on = [google_service_networking_connection.private_vpc_connection]
 }
 resource "google_sql_database" "database"{
     name = var.cloud_sql_instance_name
@@ -544,72 +543,72 @@ resource "google_datastream_private_connection" "private_connection" {
 }
 
 # 2. EL PERFIL DE ORIGEN (La conexión a Cloud SQL)
-resource "google_datastream_connection_profile" "postgres_source" {
-  display_name          = "Origen Cloud SQL"
-  location              = var.region
-  connection_profile_id = "cloudsql-source-profile"
+# resource "google_datastream_connection_profile" "postgres_source" {
+#   display_name          = "Origen Cloud SQL"
+#   location              = var.region
+#   connection_profile_id = "cloudsql-source-profile"
 
-  postgresql_profile {
-    hostname = google_sql_database_instance.cloud_sql_instance.private_ip_address
-    port     = 5432
-    username = var.db_user
-    password = var.db_password
-    database = google_sql_database.database.name
-  }
+#   postgresql_profile {
+#     hostname = google_sql_database_instance.cloud_sql_instance.private_ip_address
+#     port     = 5432
+#     username = var.db_user
+#     password = var.db_password
+#     database = google_sql_database.database.name
+#   }
 
-  # Le decimos que use el túnel que creamos arriba
-  private_connectivity {
-    private_connection = google_datastream_private_connection.private_connection.id
-  }
-  depends_on = [
-    google_project_service.datastream_api,
-    google_compute_firewall.allow_datastream_to_sql
-    ]
-}
+#   # Le decimos que use el túnel que creamos arriba
+#   private_connectivity {
+#     private_connection = google_datastream_private_connection.private_connection.id
+#   }
+#   depends_on = [
+#     google_project_service.datastream_api,
+#     google_compute_firewall.allow_datastream_to_sql
+#     ]
+# }
 
-# 3. EL PERFIL DE DESTINO (La conexión a BigQuery)
-resource "google_datastream_connection_profile" "bigquery_dest" {
-  display_name          = "Destino BigQuery"
-  location              = var.region
-  connection_profile_id = "bigquery-dest-profile"
+# # 3. EL PERFIL DE DESTINO (La conexión a BigQuery)
+# resource "google_datastream_connection_profile" "bigquery_dest" {
+#   display_name          = "Destino BigQuery"
+#   location              = var.region
+#   connection_profile_id = "bigquery-dest-profile"
 
-  bigquery_profile {}
-  depends_on = [ google_project_service.datastream_api ]
-}
+#   bigquery_profile {}
+#   depends_on = [ google_project_service.datastream_api ]
+# }
 
-# 4. LA TUBERÍA (El Stream que une todo)
-resource "google_datastream_stream" "cloudsql_to_bq" {
-  display_name  = "Replicacion BBDD a BigQuery"
-  location      = var.region
-  stream_id     = "replicacion-bq"
-  desired_state = "RUNNING" 
+# # 4. LA TUBERÍA (El Stream que une todo)
+# resource "google_datastream_stream" "cloudsql_to_bq" {
+#   display_name  = "Replicacion BBDD a BigQuery"
+#   location      = var.region
+#   stream_id     = "replicacion-bq"
+#   desired_state = "RUNNING" 
 
-  source_config {
-    source_connection_profile = google_datastream_connection_profile.postgres_source.id
-    postgresql_source_config {
-      replication_slot = "datastream_slot" ##funciona como un marcapáginas, para saber por donde se quedó leyendo
-      publication      = "datastream_pub"
-    }
-  }
+#   source_config {
+#     source_connection_profile = google_datastream_connection_profile.postgres_source.id
+#     postgresql_source_config {
+#       replication_slot = "datastream_slot" ##funciona como un marcapáginas, para saber por donde se quedó leyendo
+#       publication      = "datastream_pub"
+#     }
+#   }
 
-  destination_config {
-    destination_connection_profile = google_datastream_connection_profile.bigquery_dest.id
-    bigquery_destination_config {
-      data_freshness = "0s" # Tiempo real absoluto
-      single_target_dataset {
-        dataset_id = google_bigquery_dataset.bigquery_dataset.dataset_id
-      }
-    }
-  }
+#   destination_config {
+#     destination_connection_profile = google_datastream_connection_profile.bigquery_dest.id
+#     bigquery_destination_config {
+#       data_freshness = "0s" # Tiempo real absoluto
+#       single_target_dataset {
+#         dataset_id = google_bigquery_dataset.bigquery_dataset.dataset_id
+#       }
+#     }
+#   }
   
 
 
-  # Esto hace que copie los datos que ya existan, además de los nuevos
-  backfill_all {} 
+#   # Esto hace que copie los datos que ya existan, además de los nuevos
+#   backfill_all {} 
 
-  # Terraform debe esperar a que el túnel exista antes de crear la tubería
-  depends_on = [
-    google_project_service.datastream_api,
-    google_datastream_private_connection.private_connection
-  ]
-}
+#   # Terraform debe esperar a que el túnel exista antes de crear la tubería
+#   depends_on = [
+#     google_project_service.datastream_api,
+#     google_datastream_private_connection.private_connection
+#   ]
+# }
