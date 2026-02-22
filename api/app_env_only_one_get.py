@@ -38,7 +38,7 @@ def getconn():
         user=os.getenv("DB_USER"), 
         password=os.getenv("DB_PASS"),
         database=os.getenv("DB_NAME"),
-        host="172.25.64.3",  # <-- TU IP PRIVADA (Asegúrate de que sigue siendo esta)
+        host="172.25.64.3", 
         port=5432
     )
     return conn
