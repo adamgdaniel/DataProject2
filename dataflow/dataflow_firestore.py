@@ -80,11 +80,10 @@ def calcular_direccion_escape(coords_victima, coords_agresor):
     lat_v, lon_v = map(float, coordv_limpias.split(','))
     lat_a, lon_a = map(float, coorda_limpias.split(','))
 
-    # Cálculo correcto (lat con lat, lon con lon)
+
     d_lat = lat_a - lat_v
     d_lon = lon_a - lon_v
 
-    # Calculamos el ángulo en grados
     angulo = math.degrees(math.atan2(d_lat, d_lon))
     if angulo < 0:
         angulo += 360
