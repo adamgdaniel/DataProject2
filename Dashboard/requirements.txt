@@ -6,3 +6,4 @@ google-cloud-firestore
 psycopg2-binary
 python-dotenv
 requests
+google-cloud-storage
