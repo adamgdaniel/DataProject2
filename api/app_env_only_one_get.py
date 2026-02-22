@@ -16,32 +16,32 @@ publisher = pubsub_v1.PublisherClient()
 TOPIC_AGRESORES = publisher.topic_path(PROJECT_ID, "agresores-datos")
 TOPIC_VICTIMAS = publisher.topic_path(PROJECT_ID, "victimas-datos")
 
-# connector = Connector()
-
-# def getconn():
-#     conn = connector.connect(
-#         os.getenv("INSTANCE_CONNECTION_NAME"),
-#         "pg8000",
-#         user=os.getenv("DB_USER"),
-#         password=os.getenv("DB_PASS"),
-#         db=os.getenv("DB_NAME"),
-#         ip_type=IPTypes.PRIVATE
-#     )
-#     return conn
-
-import pg8000
-import os
+connector = Connector()
 
 def getconn():
-    """Crea la conexión DIRECTA a la IP privada de Cloud SQL."""
-    conn = pg8000.connect(
-        user=os.getenv("DB_USER"), 
+    conn = connector.connect(
+        os.getenv("INSTANCE_CONNECTION_NAME"),
+        "pg8000",
+        user=os.getenv("DB_USER"),
         password=os.getenv("DB_PASS"),
-        database=os.getenv("DB_NAME"),
-        host="172.25.64.3", 
-        port=5432
+        db=os.getenv("DB_NAME"),
+        ip_type=IPTypes.PRIVATE
     )
     return conn
+
+# import pg8000
+# import os
+
+# def getconn():
+#     """Crea la conexión DIRECTA a la IP privada de Cloud SQL."""
+#     conn = pg8000.connect(
+#         user=os.getenv("DB_USER"), 
+#         password=os.getenv("DB_PASS"),
+#         database=os.getenv("DB_NAME"),
+#         host="172.25.64.3", 
+#         port=5432
+#     )
+#     return conn
 
 # def obtener_password_secreto():
 #     client = secretmanager.SecretManagerServiceClient()
