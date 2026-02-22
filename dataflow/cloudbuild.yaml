@@ -54,7 +54,7 @@ substitutions:
   _REGION_ID: 'europe-west6'
   _DATAFLOW_BASE_BUCKET: 'bucket-dataflow-data-project2' 
   _DATAFLOW_TEMPLATE_NAME: 'plantilla-policia'
-  _DATAFLOW_JOB_NAME: 'dataproject2dataflowv2' # Actualizado para coincidir con tu comando local
+  _DATAFLOW_JOB_NAME: 'dataproject2dataflowv3' # Actualizado para coincidir con tu comando local
   _SERVICE_ACCOUNT: 'dataflow-sa@data-project-streaming-487217.iam.gserviceaccount.com'
   
   _ARTIFACT_REGISTRY_REPOSITORY: 'repo-imagenes-proyecto' 
