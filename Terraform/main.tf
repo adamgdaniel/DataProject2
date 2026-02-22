@@ -579,9 +579,6 @@ resource "google_project_iam_member" "dbt_sa_roles" {
   member  = "serviceAccount:${google_service_account.dbt_sa.email}"
 }
 
-resource "google_service_account_key" "dbt_key" {
-  service_account_id = google_service_account.dbt_sa.name
-}
 
 resource "google_cloud_run_v2_job" "dbt_job" {
   name     = "dbt-alertas-job"
