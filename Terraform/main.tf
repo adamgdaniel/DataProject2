@@ -632,3 +632,40 @@ resource "google_datastream_private_connection" "private_connection" {
 #     google_datastream_private_connection.private_connection
 #   ]
 # }
+
+/* =================================================================================
+🚀 CONFIGURACIÓN DE DATASTREAM (CLOUD SQL -> BIGQUERY)
+=================================================================================
+NOTA IMPORTANTE: La replicación de datos en tiempo real mediante Datastream se 
+ha configurado MANUALMENTE desde la consola de GCP y se ha excluido de Terraform.
+
+¿POR QUÉ?
+Google Cloud tiene una restricción física de red llamada "Peering Transitivo". 
+Al intentar conectar Datastream -> Red VPC por defecto -> Cloud SQL (IP Privada), 
+el tráfico se bloquea por defecto, provocando errores de timeout. 
+Para evitar el coste y la complejidad de desplegar un proxy intermedio (HAProxy) 
+en una máquina virtual, optamos por una solución híbrida más limpia y segura.
+
+ARQUITECTURA Y OPCIONES ESCOGIDAS:
+
+  1. Cloud SQL (Dual IP): 
+      - IP Privada: Sigue siendo la vía exclusiva para nuestra API en Cloud Run.
+      - IP Pública: Se activó con un "IP Allowlist" (candado de red) estricto. 
+        Solo las 5 IPs oficiales de Datastream (europe-west6) tienen permiso 
+        para llamar a esta puerta. Es invisible e inaccesible para el resto de internet.
+
+  2. Perfil de Origen (PostgreSQL):
+      - Conexión vía IP Pública + Allowlist.
+      - Se crearon manualmente en la BD: PUBLICATION 'datastream_pub' y 
+        REPLICATION SLOT 'datastream_slot' para la lectura secuencial (CDC).
+      - Se seleccionaron EXCLUSIVAMENTE las 5 tablas de negocio (agresores, 
+        victimas, rel_places_victimas, rel_victimas_agresores, safe_places), 
+        ignorando los esquemas internos de Postgres (pg_catalog, etc.).
+
+  3. Perfil de Destino y Stream (BigQuery):
+      - Schema grouping: "Single dataset for all schemas" para centralizar todo.
+      - Stream write mode: "MERGE". Elegimos Merge en lugar de Append-only para 
+        mantener un espejo exacto del estado actual de las coordenadas, evitando 
+        duplicar filas en el Data Warehouse con el histórico de movimientos.
+      - Staleness limit: "0 seconds" (Tiempo real absoluto para las alertas).
+   ================================================================================= */
