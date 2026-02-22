@@ -583,11 +583,6 @@ resource "google_service_account_key" "dbt_key" {
   service_account_id = google_service_account.dbt_sa.name
 }
 
-resource "local_file" "dbt_key_file" {
-  content  = base64decode(google_service_account_key.dbt_key.private_key)
-  filename = "${path.module}/google-service-account-key.json"
-}
-
 resource "google_cloud_run_v2_job" "dbt_job" {
   name     = "dbt-alertas-job"
   location = var.region
