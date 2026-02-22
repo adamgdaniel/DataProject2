@@ -37,7 +37,7 @@ steps:
            '--staging-location=gs://$_DATAFLOW_BASE_BUCKET/staging',
            '--temp-location=gs://$_DATAFLOW_BASE_BUCKET/temp',
            '--service-account-email=$_SERVICE_ACCOUNT', 
-           '--max-workers=1', 
+           '--max-workers=15', 
            '--update' 
     ]
     waitFor: ['Build Dataflow Flex Template']
