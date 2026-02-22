@@ -16,16 +16,30 @@ publisher = pubsub_v1.PublisherClient()
 TOPIC_AGRESORES = publisher.topic_path(PROJECT_ID, "agresores-datos")
 TOPIC_VICTIMAS = publisher.topic_path(PROJECT_ID, "victimas-datos")
 
-connector = Connector()
+# connector = Connector()
+
+# def getconn():
+#     conn = connector.connect(
+#         os.getenv("INSTANCE_CONNECTION_NAME"),
+#         "pg8000",
+#         user=os.getenv("DB_USER"),
+#         password=os.getenv("DB_PASS"),
+#         db=os.getenv("DB_NAME"),
+#         ip_type=IPTypes.PRIVATE
+#     )
+#     return conn
+
+import pg8000
+import os
 
 def getconn():
-    conn = connector.connect(
-        os.getenv("INSTANCE_CONNECTION_NAME"),
-        "pg8000",
-        user=os.getenv("DB_USER"),
+    """Crea la conexión DIRECTA a la IP privada de Cloud SQL."""
+    conn = pg8000.connect(
+        user=os.getenv("DB_USER"), 
         password=os.getenv("DB_PASS"),
-        db=os.getenv("DB_NAME"),
-        ip_type=IPTypes.PRIVATE
+        database=os.getenv("DB_NAME"),
+        host="172.25.64.3",  # <-- TU IP PRIVADA (Asegúrate de que sigue siendo esta)
+        port=5432
     )
     return conn
 
