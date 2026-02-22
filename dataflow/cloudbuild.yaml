@@ -1,28 +1,39 @@
 steps:
+  # 1. Construir la imagen Docker usando tu propio Dockerfile
+  - name: 'gcr.io/cloud-builders/docker'
+    dir: 'dataflow'
+    id: Build Docker Image
+    args: ['build', '-t', '$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA', '.']
+
+  # 2. Subir la imagen a Artifact Registry
+  - name: 'gcr.io/cloud-builders/docker'
+    dir: 'dataflow'
+    id: Push Docker Image
+    args: ['push', '$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA']
+    waitFor: ['Build Docker Image']
+
+  # 3. Crear el JSON de la Flex Template apuntando a la imagen ya subida
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
-    dir: 'dataflow' 
+    dir: 'dataflow'
     id: Build Dataflow Flex Template
     args: ['dataflow', 'flex-template', 'build',
            'gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json',
-           '--image-gcr-path=$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA',
-           '--flex-template-base-image=PYTHON3',
-           '--sdk-language=PYTHON',
-           '--py-path=.',
-           '--env=FLEX_TEMPLATE_PYTHON_PY_FILE=$_DATAFLOW_PYTHON_FILE_PATH',
-           '--env=FLEX_TEMPLATE_PYTHON_REQUIREMENTS_FILE=$_DATAFLOW_REQUIREMENTS_FILE_PATH'
+           '--image=$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA',
+           '--sdk-language=PYTHON'
     ]
+    waitFor: ['Push Docker Image']
 
+  # 4. Ejecutar el Job de Dataflow
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     dir: 'dataflow'
     id: Run Dataflow Flex Template
     args: ['dataflow', 'flex-template', 'run', '$_DATAFLOW_JOB_NAME',
            '--template-file-gcs-location=gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json',
-           # Aquí hemos añadido bigquery_dataset y alertas_bigquery_table a los parámetros de tu script
            '--parameters=project_id=$PROJECT_ID,victimas_pubsub_subscription_name=$_VICTIMAS_PUBSUB_SUBSCRIPTION_NAME,agresores_pubsub_subscription_name=$_AGRESORES_PUBSUB_SUBSCRIPTION_NAME,firestore_db=$_FIRESTORE_DB,firestore_collection=$_FIRESTORE_COLLECTION_NAME,alertas_policia_topic=$_NOTIFICATIONS_PUBSUB_TOPIC_NAME,db_host=$_DB_HOST,db_user=$_DB_USER,db_name=$_DB_NAME,bigquery_dataset=$_BIGQUERY_DATASET,alertas_bigquery_table=$_ALERTAS_BIGQUERY_TABLE',
            '--region=$_REGION_ID',
-           '--subnetwork=$_SUBNETWORK', # El subnetwork va como flag nativo de gcloud, no dentro de --parameters
+           '--subnetwork=$_SUBNETWORK',
            '--staging-location=gs://$_DATAFLOW_BASE_BUCKET/staging',
            '--temp-location=gs://$_DATAFLOW_BASE_BUCKET/temp',
            '--service-account-email=$_SERVICE_ACCOUNT', 
@@ -30,23 +41,7 @@ steps:
            '--update' 
     ]
     waitFor: ['Build Dataflow Flex Template']
-  # 3. Registrar la Flex Template MANUALMENTE (Nos saltamos el bug de gcloud)
-  # - name: 'gcr.io/cloud-builders/gsutil'
-  #   entrypoint: 'bash'
-  #   dir: 'dataflow'
-  #   args:
-  #     - '-c'
-  #     - |
-  #       # Escribimos las 4 líneas del JSON que Dataflow necesita
-  #       cat <<EOF > template.json
-  #       {
-  #         "image": "$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA",
-  #         "sdkInfo": {"language": "PYTHON"}
-  #       }
-  #       EOF
-        
-  #       # Lo subimos directamente a tu bucket
-  #       gsutil cp template.json gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json
+
 options:
   logging: CLOUD_LOGGING_ONLY
 
@@ -54,7 +49,7 @@ substitutions:
   _REGION_ID: 'europe-west6'
   _DATAFLOW_BASE_BUCKET: 'bucket-dataflow-data-project2' 
   _DATAFLOW_TEMPLATE_NAME: 'plantilla-policia'
-  _DATAFLOW_JOB_NAME: 'dataproject2dataflowv3' # Actualizado para coincidir con tu comando local
+  _DATAFLOW_JOB_NAME: 'dataproject2dataflowv3' 
   _SERVICE_ACCOUNT: 'dataflow-sa@data-project-streaming-487217.iam.gserviceaccount.com'
   
   _ARTIFACT_REGISTRY_REPOSITORY: 'repo-imagenes-proyecto' 
@@ -73,7 +68,6 @@ substitutions:
   _DB_USER: 'admin_user'
   _DB_NAME: 'victimas'
   
-  # --- NUEVOS PARÁMETROS AÑADIDOS ---
   _BIGQUERY_DATASET: 'analitical_dataset5'
   _ALERTAS_BIGQUERY_TABLE: 'alertas'
   _SUBNETWORK: 'regions/europe-west6/subnetworks/default'
