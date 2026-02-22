@@ -1,8 +1,7 @@
 steps:
-  # 1. Construir la Flex Template (Empaqueta tu código en Docker y sube el JSON a GCS)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
-    dir: 'dataflow' # Nos aseguramos de ejecutarlo dentro de tu carpeta
+    dir: 'dataflow' 
     id: Build Dataflow Flex Template
     args: ['dataflow', 'flex-template', 'build',
            'gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json',
@@ -14,19 +13,20 @@ steps:
            '--env=FLEX_TEMPLATE_PYTHON_REQUIREMENTS_FILE=$_DATAFLOW_REQUIREMENTS_FILE_PATH'
     ]
 
-  # 2. Ejecutar la Flex Template (Lanza el Job en Dataflow con la imagen creada)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     dir: 'dataflow'
     id: Run Dataflow Flex Template
     args: ['dataflow', 'flex-template', 'run', '$_DATAFLOW_JOB_NAME',
            '--template-file-gcs-location=gs://$_DATAFLOW_BASE_BUCKET/$_DATAFLOW_TEMPLATE_NAME.json',
-           # Aquí pasamos todos los argumentos exactos que pide tu dataflow_firestore.py
-           '--parameters=project_id=$PROJECT_ID,victimas_pubsub_subscription_name=$_VICTIMAS_PUBSUB_SUBSCRIPTION_NAME,agresores_pubsub_subscription_name=$_AGRESORES_PUBSUB_SUBSCRIPTION_NAME,firestore_db=$_FIRESTORE_DB,firestore_collection=$_FIRESTORE_COLLECTION_NAME,alertas_policia_topic=$_NOTIFICATIONS_PUBSUB_TOPIC_NAME,db_host=$_DB_HOST,db_user=$_DB_USER,db_pass=$_DB_PASS,db_name=$_DB_NAME',
+           # Eliminado db_pass de los parámetros
+           '--parameters=project_id=$PROJECT_ID,victimas_pubsub_subscription_name=$_VICTIMAS_PUBSUB_SUBSCRIPTION_NAME,agresores_pubsub_subscription_name=$_AGRESORES_PUBSUB_SUBSCRIPTION_NAME,firestore_db=$_FIRESTORE_DB,firestore_collection=$_FIRESTORE_COLLECTION_NAME,alertas_policia_topic=$_NOTIFICATIONS_PUBSUB_TOPIC_NAME,db_host=$_DB_HOST,db_user=$_DB_USER,db_name=$_DB_NAME',
            '--region=$_REGION_ID',
-           '--service-account-email=$_SERVICE_ACCOUNT', # Tu cuenta constructora para Dataflow
-           '--max-workers=1', # Puedes subirlo si necesitas más potencia
-           '--update'         # Clave para streaming: actualiza el job sin perder mensajes
+           '--staging-location=gs://$_DATAFLOW_BASE_BUCKET/staging',
+           '--temp-location=gs://$_DATAFLOW_BASE_BUCKET/temp',
+           '--service-account-email=$_SERVICE_ACCOUNT', 
+           '--max-workers=1', 
+           '--update' 
     ]
     waitFor: ['Build Dataflow Flex Template']
 
@@ -34,28 +34,25 @@ options:
   logging: CLOUD_LOGGING_ONLY
 
 substitutions:
-  # Infraestructura base
   _REGION_ID: 'europe-west6'
-  _DATAFLOW_BASE_BUCKET: 'TU_BUCKET_DATAFLOW' # Pon aquí el nombre de tu bucket sin 'gs://'
+  _DATAFLOW_BASE_BUCKET: 'bucket-edem-data-project-2' 
   _DATAFLOW_TEMPLATE_NAME: 'plantilla-policia'
-  _DATAFLOW_JOB_NAME: 'streaming-matches-policia'
-  _SERVICE_ACCOUNT: 'dataflow-sa@TU_PROJECT_ID.iam.gserviceaccount.com'
+  _DATAFLOW_JOB_NAME: 'dataproject2dataflow'
+  _SERVICE_ACCOUNT: 'dataflow-sa@data-project-streaming-487217.iam.gserviceaccount.com'
   
-  # Artifact Registry (usamos el mismo repositorio que creaste en Terraform)
   _ARTIFACT_REGISTRY_REPOSITORY: 'repo-imagenes-proyecto' 
   _ARTIFACT_REGISTRY_IMAGE_NAME: 'dataflow-template-policia'
   
-  # Archivos de código
   _DATAFLOW_PYTHON_FILE_PATH: 'dataflow_firestore.py'
   _DATAFLOW_REQUIREMENTS_FILE_PATH: 'requirements.txt'
   
-  # Variables de tu código (argparse)
   _VICTIMAS_PUBSUB_SUBSCRIPTION_NAME: 'victimas-datos-sub'
   _AGRESORES_PUBSUB_SUBSCRIPTION_NAME: 'agresores-datos-sub'
-  _FIRESTORE_DB: '(default)'
-  _FIRESTORE_COLLECTION_NAME: 'alertas'
   _NOTIFICATIONS_PUBSUB_TOPIC_NAME: 'policia-alertas'
-  _DB_HOST: '10.X.X.X' # La IP privada de tu Cloud SQL
-  _DB_USER: 'TU_USUARIO'
-  _DB_PASS: 'TU_PASS'
-  _DB_NAME: 'TU_BD'
+  
+  _FIRESTORE_DB: 'firestore-database5'
+  _FIRESTORE_COLLECTION_NAME: 'alertas'
+  
+  _DB_HOST: '172.25.64.3' 
+  _DB_USER: 'admin_user'
+  _DB_NAME: 'victimas'

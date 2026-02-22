@@ -82,6 +82,110 @@ resource "google_bigquery_dataset" "bigquery_dataset" {
     project = var.project_id
     location = var.region
 }
+
+resource "google_bigquery_table" "tabla_alertas" {
+  dataset_id          = google_bigquery_dataset.bigquery_dataset.dataset_id
+  table_id            = "alertas"
+  deletion_protection = false 
+
+  table_constraints {
+    primary_key {
+      columns = ["alerta"]
+    }
+  }
+
+  time_partitioning {
+    type  = "HOUR"
+    field = "timestamp"
+  }
+
+  # Esquema completo de la tabla
+  schema = <<EOF
+[
+  {
+    "name": "alerta",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "activa",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "nivel",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "id_victima",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "id_agresor",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "distancia_metros",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "direccion_escape",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "coordenadas_agresor",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "coordenadas_victima",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "coordenadas_place",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "dist_seguridad",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "distancia_limite",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "id_place",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "nombre_place",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "radio_zona",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  }
+]
+EOF
+}
+
 data "google_compute_network" "default" {
   name = "default"
 }
