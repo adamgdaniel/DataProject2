@@ -562,110 +562,71 @@ resource "google_datastream_private_connection" "private_connection" {
   depends_on = [ google_project_service.datastream_api ]
 }
 
-# 2. EL PERFIL DE ORIGEN (La conexión a Cloud SQL)
-# resource "google_datastream_connection_profile" "postgres_source" {
-#   display_name          = "Origen Cloud SQL"
-#   location              = var.region
-#   connection_profile_id = "cloudsql-source-profile"
+resource "google_service_account" "dbt_sa" {
+  account_id   = "dbt-sa"
+  display_name = "Service Account para DBT"
+}
 
-#   postgresql_profile {
-#     hostname = google_sql_database_instance.cloud_sql_instance.private_ip_address
-#     port     = 5432
-#     username = var.db_user
-#     password = var.db_password
-#     database = google_sql_database.database.name
-#   }
+resource "google_project_iam_member" "dbt_sa_roles" {
+  for_each = toset([
+    "roles/bigquery.jobUser",
+    "roles/bigquery.dataEditor",
+    "roles/bigquery.metadataViewer"
+  ])
 
-#   # Le decimos que use el túnel que creamos arriba
-#   private_connectivity {
-#     private_connection = google_datastream_private_connection.private_connection.id
-#   }
-#   depends_on = [
-#     google_project_service.datastream_api,
-#     google_compute_firewall.allow_datastream_to_sql
-#     ]
-# }
+  project = var.project_id
+  role    = each.value
+  member  = "serviceAccount:${google_service_account.dbt_sa.email}"
+}
 
-# # 3. EL PERFIL DE DESTINO (La conexión a BigQuery)
-# resource "google_datastream_connection_profile" "bigquery_dest" {
-#   display_name          = "Destino BigQuery"
-#   location              = var.region
-#   connection_profile_id = "bigquery-dest-profile"
+resource "google_service_account_key" "dbt_key" {
+  service_account_id = google_service_account.dbt_sa.name
+}
 
-#   bigquery_profile {}
-#   depends_on = [ google_project_service.datastream_api ]
-# }
+resource "local_file" "dbt_key_file" {
+  content  = base64decode(google_service_account_key.dbt_key.private_key)
+  filename = "${path.module}/google-service-account-key.json"
+}
 
-# # 4. LA TUBERÍA (El Stream que une todo)
-# resource "google_datastream_stream" "cloudsql_to_bq" {
-#   display_name  = "Replicacion BBDD a BigQuery"
-#   location      = var.region
-#   stream_id     = "replicacion-bq"
-#   desired_state = "RUNNING" 
+resource "google_cloud_run_v2_job" "dbt_job" {
+  name     = "dbt-alertas-job"
+  location = var.region
 
-#   source_config {
-#     source_connection_profile = google_datastream_connection_profile.postgres_source.id
-#     postgresql_source_config {
-#       replication_slot = "datastream_slot" ##funciona como un marcapáginas, para saber por donde se quedó leyendo
-#       publication      = "datastream_pub"
-#     }
-#   }
+  template {
+    template {
+      containers {
+        image = "europe-west6-docker.pkg.dev/data-project-streaming-487217/repo-imagenes-proyecto/dbt-alertas:latest"
+      }
+      service_account = google_service_account.dbt_sa.email
+    }
+  }
+}
 
-#   destination_config {
-#     destination_connection_profile = google_datastream_connection_profile.bigquery_dest.id
-#     bigquery_destination_config {
-#       data_freshness = "0s" # Tiempo real absoluto
-#       single_target_dataset {
-#         dataset_id = google_bigquery_dataset.bigquery_dataset.dataset_id
-#       }
-#     }
-#   }
-  
+resource "google_project_iam_member" "scheduler_run_invoker" {
+  project = "data-project-streaming-487217"
+  role    = "roles/run.invoker"
+  member  = "serviceAccount:${google_service_account.dbt_sa.email}"
+}
 
+resource "google_cloud_scheduler_job" "dbt_scheduler" {
+  name             = "dbt-alertas-schedule"
+  description      = "Lanza el dbt run cada 5 minutos"
+  schedule         = "*/5 * * * *"
+  time_zone        = "Europe/Madrid"
+  region           = var.region
 
-#   # Esto hace que copie los datos que ya existan, además de los nuevos
-#   backfill_all {} 
+  retry_config {
+    retry_count = 1
+  }
 
-#   # Terraform debe esperar a que el túnel exista antes de crear la tubería
-#   depends_on = [
-#     google_project_service.datastream_api,
-#     google_datastream_private_connection.private_connection
-#   ]
-# }
+  http_target {
+    http_method = "POST"
+    uri         = "https://europe-west6-run.googleapis.com/apis/run.googleapis.com/v1/namespaces/data-project-streaming-487217/jobs/dbt-alertas-job:run"
 
-/* =================================================================================
-🚀 CONFIGURACIÓN DE DATASTREAM (CLOUD SQL -> BIGQUERY)
-=================================================================================
-NOTA IMPORTANTE: La replicación de datos en tiempo real mediante Datastream se 
-ha configurado MANUALMENTE desde la consola de GCP y se ha excluido de Terraform.
+    oauth_token {
+      service_account_email = google_service_account.dbt_sa.email
+    }
+  }
 
-¿POR QUÉ?
-Google Cloud tiene una restricción física de red llamada "Peering Transitivo". 
-Al intentar conectar Datastream -> Red VPC por defecto -> Cloud SQL (IP Privada), 
-el tráfico se bloquea por defecto, provocando errores de timeout. 
-Para evitar el coste y la complejidad de desplegar un proxy intermedio (HAProxy) 
-en una máquina virtual, optamos por una solución híbrida más limpia y segura.
-
-ARQUITECTURA Y OPCIONES ESCOGIDAS:
-
-  1. Cloud SQL (Dual IP): 
-      - IP Privada: Sigue siendo la vía exclusiva para nuestra API en Cloud Run.
-      - IP Pública: Se activó con un "IP Allowlist" (candado de red) estricto. 
-        Solo las 5 IPs oficiales de Datastream (europe-west6) tienen permiso 
-        para llamar a esta puerta. Es invisible e inaccesible para el resto de internet.
-
-  2. Perfil de Origen (PostgreSQL):
-      - Conexión vía IP Pública + Allowlist.
-      - Se crearon manualmente en la BD: PUBLICATION 'datastream_pub' y 
-        REPLICATION SLOT 'datastream_slot' para la lectura secuencial (CDC).
-      - Se seleccionaron EXCLUSIVAMENTE las 5 tablas de negocio (agresores, 
-        victimas, rel_places_victimas, rel_victimas_agresores, safe_places), 
-        ignorando los esquemas internos de Postgres (pg_catalog, etc.).
-
-  3. Perfil de Destino y Stream (BigQuery):
-      - Schema grouping: "Single dataset for all schemas" para centralizar todo.
-      - Stream write mode: "MERGE". Elegimos Merge en lugar de Append-only para 
-        mantener un espejo exacto del estado actual de las coordenadas, evitando 
-        duplicar filas en el Data Warehouse con el histórico de movimientos.
-      - Staleness limit: "0 seconds" (Tiempo real absoluto para las alertas).
-   ================================================================================= */
+  depends_on = [google_cloud_run_v2_job.dbt_job]
+}
