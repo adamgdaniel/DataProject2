@@ -366,14 +366,32 @@ resource "google_project_iam_member" "build_sa_roles" {
     "roles/iam.serviceAccountUser",
     "roles/storage.objectViewer",
     "roles/cloudbuild.builds.builder",
-    "roles/developerconnect.readTokenAccessor"
+    "roles/developerconnect.readTokenAccessor",
+    "roles/cloudbuild.builds.editor",
+    "roles/storage.objectAdmin"
   ])
 
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
+# 1. Obtenemos la información de tu proyecto actual (para sacar el número del proyecto)
+data "google_project" "project" {
+  project_id = var.project_id
+}
 
+resource "google_project_iam_member" "default_cloudbuild_roles" {
+  for_each = toset([
+    "roles/cloudbuild.builds.editor",   
+    "roles/artifactregistry.writer",  
+    "roles/storage.objectAdmin" 
+  ])
+
+  project = var.project_id
+  role    = each.value
+  
+  member  = "serviceAccount:${data.google_project.project.number}@cloudbuild.gserviceaccount.com"
+}
 resource "google_service_account" "firestore_sa2" {
   account_id   = "firestore-sa"
   display_name = "Service Account para Firestore"
