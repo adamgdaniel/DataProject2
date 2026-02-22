@@ -26,6 +26,12 @@ steps:
       - '${_REGION}'
       - '--project'
       - '${PROJECT_ID}'
+      - '--network'
+      - 'default'
+      - '--subnet'
+      - 'default'
+      - '--vpc-egress'
+      - 'private-ranges-only'
 
 substitutions:
   _REGION: 'europe-west6'

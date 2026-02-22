@@ -22,7 +22,7 @@ def obtener_ids_desde_db():
     print(f"[API GET] Consultando usuarios activos en {API_URL}...")
     try:
         # Hacemos GET a la API en lugar de conectar directamente a la DB
-        response = requests.get(f"{API_URL}/api/generador/usuarios", timeout=10)
+        response = requests.get(f"{API_URL}/api/generador/usuarios", timeout=60)
         if response.status_code == 200:
             data = response.json()
             return data['victimas'], data['agresores']
