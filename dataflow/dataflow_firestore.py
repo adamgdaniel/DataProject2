@@ -36,19 +36,25 @@ def jsonEncode(elemento):
     return mensaje_str.encode('utf-8')
 
 def normalizeVictimas(event):
+    coords = event["coordinates"]
+    if isinstance(coords, list):
+        coords = f"{coords[0]},{coords[1]}"
    
     return {
         "user_id": event["user_id"],
-        "coordinates": event["coordinates"],
+        "coordinates": str(coords),
         "timestamp": event["timestamp"],
         "tipo": "victima",
     }
 
 def normalizeAgresores(event):
+    coords = event["coordinates"]
+    if isinstance(coords, list):
+        coords = f"{coords[0]},{coords[1]}"
   
     return {
         "user_id": event["user_id"],
-        "coordinates": event["coordinates"],
+        "coordinates": str(coords),
         "timestamp": event["timestamp"],
         "tipo": "agresor",
     }
@@ -64,13 +70,15 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
         
         for id_agresor, dist in info_victima_db['agresores'].items():
             # Ahora datos_victima tiene: user_id, coordinates, timestamp, tipo, safe_zones Y dist_seguridad
-            datos_victima['dist_seguridad'] = dist            
-            yield (id_agresor, datos_victima)
+            victima_datos = datos_victima.copy()
+            victima_datos['dist_seguridad'] = dist           
+            yield (id_agresor, victima_datos)
 
 def calcular_direccion_escape(coords_victima, coords_agresor):
     lat_v, lon_v = map(float, coords_victima.split(','))
     lat_a, lon_a = map(float, coords_agresor.split(','))
 
+    # Cálculo correcto (lat con lat, lon con lon)
     d_lat = lat_a - lat_v
     d_lon = lon_a - lon_v
 
@@ -151,7 +159,7 @@ def detectar_match(elemento):
                             "direccion_escape": direccion_escape,
                             "radio_zona": zona['radius'],
                             "coordenadas_agresor": datos_agresor['coordinates'],
-                            "coordenadas_place": zona['place_coordinates'],
+                            "coordenadas_place": str(zona['place_coordinates']),
                             "timestamp": datos_agresor['timestamp'],
                             "dist_seguridad": distancia_configurada,
                         }
