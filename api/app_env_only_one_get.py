@@ -7,6 +7,7 @@ from google.cloud import pubsub_v1
 from google.cloud.sql.connector import Connector, IPTypes
 import pg8000
 
+
 app = Flask(__name__)
 PROJECT_ID = os.getenv("PROJECT_ID", "data-project-streaming-487217")
 
@@ -14,6 +15,19 @@ PROJECT_ID = os.getenv("PROJECT_ID", "data-project-streaming-487217")
 publisher = pubsub_v1.PublisherClient()
 TOPIC_AGRESORES = publisher.topic_path(PROJECT_ID, "agresores-datos")
 TOPIC_VICTIMAS = publisher.topic_path(PROJECT_ID, "victimas-datos")
+
+connector = Connector()
+
+def getconn():
+    conn = connector.connect(
+        os.getenv("INSTANCE_CONNECTION_NAME"),
+        "pg8000",
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS"),
+        db=os.getenv("DB_NAME"),
+        ip_type=IPTypes.PRIVATE
+    )
+    return conn
 
 # def obtener_password_secreto():
 #     client = secretmanager.SecretManagerServiceClient()
@@ -25,14 +39,7 @@ TOPIC_VICTIMAS = publisher.topic_path(PROJECT_ID, "victimas-datos")
 #     return respuesta.payload.data.decode("UTF-8")
 
 def get_db_connection():
-    """Crea la conexión segura a Cloud SQL."""
-    connector = Connector()
-    conn = connector.connect(
-        os.getenv("INSTANCE_CONNECTION_NAME"), "pg8000",
-        user=os.getenv("DB_USER"), password=os.getenv("DB_PASS"),
-        db=os.getenv("DB_NAME"), ip_type=IPTypes.PRIVATE
-    )
-    return conn
+    return getconn()
 
 # =========================================================
 # 📡 1. MÓDULO DE INGESTA DE DISPOSITIVOS GPS (Hacia Pub/Sub)
