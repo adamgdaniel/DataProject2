@@ -7,6 +7,8 @@ from google.cloud import pubsub_v1
 from google.cloud.sql.connector import Connector, IPTypes
 import pg8000
 
+# API Backend - Conectado a Cloud SQL mediante IP Privada
+
 
 app = Flask(__name__)
 PROJECT_ID = os.getenv("PROJECT_ID", "data-project-streaming-487217")

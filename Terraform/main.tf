@@ -193,6 +193,16 @@ resource "google_bigquery_table" "tabla_alertas" {
 ]
 EOF
 }
+
+data "google_compute_network" "default" {
+  name = "default"
+}
+
+data "google_compute_subnetwork" "default" {
+  name   = "default"
+  region = var.region
+}
+
 resource "google_compute_global_address" "datastream_range_nuevo" {
   name          = "rango-datastream-v4"
   purpose       = "VPC_PEERING"
@@ -408,7 +418,8 @@ resource "google_project_iam_member" "dataflow_sa_roles" {
     "roles/datastore.user",
     "roles/dataflow.worker",     
     "roles/bigquery.jobUser",
-    "roles/bigquery.dataEditor"
+    "roles/bigquery.dataEditor",
+    "roles/logging.viewer"
   ])
   project = var.project_id
   role    = each.value
@@ -462,8 +473,8 @@ resource "google_cloud_run_v2_service" "api_backend" {
     
     vpc_access {
       network_interfaces {
-         network    = "projects/${var.project_id}/global/networks/default" 
-        subnetwork = "projects/${var.project_id}/regions/${var.region}/subnetworks/default"  
+        network    = data.google_compute_network.default.id 
+        subnetwork = data.google_compute_subnetwork.default.id  
       }
       egress = "PRIVATE_RANGES_ONLY" 
     }

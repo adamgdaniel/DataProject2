@@ -17,6 +17,7 @@ from google.cloud.sql.connector import Connector, IPTypes
 # URL de tu API local
 API_URL = "https://api-backend-policia-117028352744.europe-west6.run.app"
 
+
 # --- FUNCIONES DE BASE DE DATOS ---
 def obtener_ids_desde_db():
     print(f"[API GET] Consultando usuarios activos en {API_URL}...")
