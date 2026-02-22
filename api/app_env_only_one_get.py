@@ -86,6 +86,7 @@ def obtener_datos_dashboard():
         
         # Devolver el payload gigante con todo estructurado
         return jsonify({
+            "prueba": "prueba",
             "victimas": victimas,
             "agresores": agresores,
             "safe_places": lugares,
@@ -95,7 +96,26 @@ def obtener_datos_dashboard():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 
+@app.route("/api/generador/usuarios", methods=["GET"])
+def obtener_usuarios_para_simulacion():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT id_victima FROM victimas")
+        victimas = [row[0] for row in cursor.fetchall()]
+        
+        cursor.execute("SELECT id_agresor FROM agresores")
+        agresores = [row[0] for row in cursor.fetchall()]
+        
+        conn.close()
+        return jsonify({"victimas": victimas, "agresores": agresores}), 200
+    except Exception as e:
+        app.logger.error(f"Error en endpoint generador: {e}")
+        return jsonify({"error": str(e)}), 500
+    
 
 # ----------------- POST: CREACIONES INDIVIDUALES -----------------
 

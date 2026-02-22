@@ -15,30 +15,22 @@ import requests
 from google.cloud.sql.connector import Connector, IPTypes
 
 # URL de tu API local
-API_URL = "http://127.0.0.1:8080"
+API_URL = "https://api-backend-policia-117028352744.europe-west6.run.app"
 
 # --- FUNCIONES DE BASE DE DATOS ---
 def obtener_ids_desde_db():
-    print("[DB] Consultando Cloud SQL por nuevos IDs...")
+    print(f"[API GET] Consultando usuarios activos en {API_URL}...")
     try:
-        connector = Connector()
-        conn = connector.connect(
-            os.getenv("INSTANCE_CONNECTION_NAME"), "pg8000",
-            user=os.getenv("DB_USER"), password=os.getenv("DB_PASS"),
-            db=os.getenv("DB_NAME"), ip_type=IPTypes.PUBLIC
-        )
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT id_victima FROM victimas")
-        victimas = [str(row[0]) for row in cursor.fetchall()] 
-        
-        cursor.execute("SELECT id_agresor FROM agresores")
-        agresores = [str(row[0]) for row in cursor.fetchall()]
-        
-        conn.close()
-        return victimas, agresores
+        # Hacemos GET a la API en lugar de conectar directamente a la DB
+        response = requests.get(f"{API_URL}/api/generador/usuarios", timeout=10)
+        if response.status_code == 200:
+            data = response.json()
+            return data['victimas'], data['agresores']
+        else:
+            print(f"Error en API: {response.status_code}")
+            return [], []
     except Exception as e:
-        print(f"[DB ERROR] Error al conectar o consultar la BBDD: {e}")
+        print(f"Error de conexión con la API: {e}")
         return [], []
 
 
@@ -74,39 +66,39 @@ class SafetyMovementGenerator:
 
         while True:
             try:
-                # # ==========================================
-                # # 🔥 HACK DEMO: FORZAR ESCENARIOS FIJOS 🔥
-                # # ==========================================
+                # ==========================================
+                # 🔥 HACK DEMO: FORZAR ESCENARIOS FIJOS 🔥
+                # ==========================================
                 
-                # # --- ESCENARIO 1: MATCH FÍSICO (Cercanía) ---
-                # if user_id == "vic_001":
-                #     # Usamos coordenadas cerca de Tatooine (plc_004) para que sea realista
-                #     payload = {"user_id": user_id, "coordinates": [39.469900, -0.376000], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
-                #     self.send_to_api(payload, role)
-                #     time.sleep(5)
-                #     continue
+                # --- ESCENARIO 1: MATCH FÍSICO (Cercanía) ---
+                if user_id == "vic_001":
+                    # Usamos coordenadas cerca de Tatooine (plc_004) para que sea realista
+                    payload = {"user_id": user_id, "coordinates": [39.469900, -0.376000], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
+                    self.send_to_api(payload, role)
+                    time.sleep(5)
+                    continue
                     
-                # elif user_id == "agr_001":
-                #     # Agresor 1 pegado a Víctima 1 (Diferencia de 0.00005)
-                #     payload = {"user_id": user_id, "coordinates": [39.469950, -0.376050], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
-                #     self.send_to_api(payload, role)
-                #     time.sleep(5)
-                #     continue
+                elif user_id == "agr_001":
+                    # Agresor 1 pegado a Víctima 1 (Diferencia de 0.00005)
+                    payload = {"user_id": user_id, "coordinates": [39.469950, -0.376050], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
+                    self.send_to_api(payload, role)
+                    time.sleep(5)
+                    continue
 
-                # # --- ESCENARIO 2: INVASIÓN DE ZONA SEGURA ---
-                # elif user_id == "vic_002":
-                #     # Víctima 2 está en 'Estrella de la Muerte' (Coordenadas exactas de tu BBDD)
-                #     payload = {"user_id": user_id, "coordinates": [39.455000, -0.350500], "kmh": 0, "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
-                #     self.send_to_api(payload, role)
-                #     time.sleep(5)
-                #     continue
+                # --- ESCENARIO 2: INVASIÓN DE ZONA SEGURA ---
+                elif user_id == "vic_002":
+                    # Víctima 2 está en 'Estrella de la Muerte' (Coordenadas exactas de tu BBDD)
+                    payload = {"user_id": user_id, "coordinates": [39.455000, -0.350500], "kmh": 0, "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
+                    self.send_to_api(payload, role)
+                    time.sleep(5)
+                    continue
 
-                # elif user_id == "agr_002":
-                #     # Agresor 2 irrumpe en la Estrella de la Muerte (A pocos metros de distancia)
-                #     payload = {"user_id": user_id, "coordinates": [39.455020, -0.350520], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
-                #     self.send_to_api(payload, role)
-                #     time.sleep(5)
-                #     continue
+                elif user_id == "agr_002":
+                    # Agresor 2 irrumpe en la Estrella de la Muerte (A pocos metros de distancia)
+                    payload = {"user_id": user_id, "coordinates": [39.455020, -0.350520], "kmh": config['kmh'], "battery": round(battery, 1), "timestamp": datetime.now().isoformat()}
+                    self.send_to_api(payload, role)
+                    time.sleep(5)
+                    continue
                 # ==========================================
 
                 # ==========================================
