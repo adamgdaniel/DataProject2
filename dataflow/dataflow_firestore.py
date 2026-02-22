@@ -120,7 +120,6 @@ def detectar_match(elemento):
                 alerta = {
                     "alerta": "fisica",
                     "activa": True,
-                    "nivel": "CRITICO",
                     "id_victima": vic['user_id'],
                     "id_agresor": id_agresor,
                     "distancia_metros": dist_fisica,
@@ -154,7 +153,7 @@ def detectar_match(elemento):
                             "coordenadas_agresor": datos_agresor['coordinates'],
                             "coordenadas_place": zona['place_coordinates'],
                             "timestamp": datos_agresor['timestamp'],
-                            "distancia_limite": distancia_configurada,
+                            "dist_seguridad": distancia_configurada,
                         }
                         alertas_json.append(alerta)
                         print(f"🏰 JSON ALERTA GENERADO (Place): {alerta}") 
