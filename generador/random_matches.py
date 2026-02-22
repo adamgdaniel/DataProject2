@@ -15,30 +15,22 @@ import requests
 from google.cloud.sql.connector import Connector, IPTypes
 
 # URL de tu API local
-API_URL = "http://127.0.0.1:8080"
+API_URL = "https://api-backend-policia-117028352744.europe-west6.run.app"
 
 # --- FUNCIONES DE BASE DE DATOS ---
 def obtener_ids_desde_db():
-    print("[DB] Consultando Cloud SQL por nuevos IDs...")
+    print(f"[API GET] Consultando usuarios activos en {API_URL}...")
     try:
-        connector = Connector()
-        conn = connector.connect(
-            os.getenv("INSTANCE_CONNECTION_NAME"), "pg8000",
-            user=os.getenv("DB_USER"), password=os.getenv("DB_PASS"),
-            db=os.getenv("DB_NAME"), ip_type=IPTypes.PUBLIC
-        )
-        cursor = conn.cursor()
-        
-        cursor.execute("SELECT id_victima FROM victimas")
-        victimas = [str(row[0]) for row in cursor.fetchall()] 
-        
-        cursor.execute("SELECT id_agresor FROM agresores")
-        agresores = [str(row[0]) for row in cursor.fetchall()]
-        
-        conn.close()
-        return victimas, agresores
+        # Hacemos GET a la API en lugar de conectar directamente a la DB
+        response = requests.get(f"{API_URL}/api/generador/usuarios", timeout=60)
+        if response.status_code == 200:
+            data = response.json()
+            return data['victimas'], data['agresores']
+        else:
+            print(f"Error en API: {response.status_code}")
+            return [], []
     except Exception as e:
-        print(f"[DB ERROR] Error al conectar o consultar la BBDD: {e}")
+        print(f"Error de conexión con la API: {e}")
         return [], []
 
 

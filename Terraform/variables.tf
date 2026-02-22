@@ -123,6 +123,10 @@ variable "container_image"{
     description = "URL image artifact registry"
     type = string
 }
+variable "container_image2"{
+    description = "URL image artifact registry"
+    type = string
+}
 variable "bucket_dataflow"{
     description = "Dataflow Bucket Name"
     type = string

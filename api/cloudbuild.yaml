@@ -1,0 +1,41 @@
+steps:
+  - name: 'gcr.io/cloud-builders/docker'
+    dir: 'api'
+    args: 
+      - 'build'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/api:${SHORT_SHA}'
+      - '-t'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/api:latest'
+      - '-f'
+      - 'Dockerfile' 
+      - '.'  
+
+  - name: 'gcr.io/cloud-builders/docker'
+    args: ['push', '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/api', '--all-tags']
+
+  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
+    entrypoint: gcloud
+    args:
+      - 'run'
+      - 'deploy'
+      - 'api-backend-policia' 
+      - '--image'
+      - '${_REGION}-docker.pkg.dev/${PROJECT_ID}/${_REPO_NAME}/api:${SHORT_SHA}'
+      - '--region'
+      - '${_REGION}'
+      - '--project'
+      - '${PROJECT_ID}'
+      - '--network'
+      - 'default'
+      - '--subnet'
+      - 'default'
+      - '--vpc-egress'
+      - 'private-ranges-only'
+
+substitutions:
+  _REGION: 'europe-west6'
+  _REPO_NAME: 'repo-imagenes-proyecto'
+
+options:
+  logging: CLOUD_LOGGING_ONLY

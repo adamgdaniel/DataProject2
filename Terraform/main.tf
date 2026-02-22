@@ -1,7 +1,10 @@
-terraform {
-  backend "gcs" {
-    bucket  = "bucket-state-tf-dp2"
-  }
+
+resource "google_project_service" "datastream_api" {
+  project = var.project_id
+  service = "datastream.googleapis.com"
+
+  disable_on_destroy = false
+
 }
 resource "google_pubsub_topic" "victimas_datos" {
     name = var.topic_victimas_datos
@@ -42,6 +45,7 @@ resource "google_storage_bucket" "bucket_victimas_datos" {
     name = var.bucket_imagenes
     location = var.region
 }
+
 resource "google_firestore_database" "firestore_database" {
     name = var.firestore_database
     location_id = var.region
@@ -86,6 +90,122 @@ resource "google_bigquery_dataset" "bigquery_dataset" {
     project = var.project_id
     location = var.region
 }
+
+resource "google_bigquery_table" "tabla_alertas" {
+  dataset_id          = google_bigquery_dataset.bigquery_dataset.dataset_id
+  table_id            = "alertas"
+  deletion_protection = false 
+
+  table_constraints {
+    primary_key {
+      columns = ["alerta"]
+    }
+  }
+
+  time_partitioning {
+    type  = "HOUR"
+    field = "timestamp"
+  }
+
+  # Esquema completo de la tabla
+  schema = <<EOF
+[
+  {
+    "name": "alerta",
+    "type": "STRING",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "activa",
+    "type": "BOOLEAN",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "nivel",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "id_victima",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "id_agresor",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "distancia_metros",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "direccion_escape",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "coordenadas_agresor",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "coordenadas_victima",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "coordenadas_place",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "timestamp",
+    "type": "TIMESTAMP",
+    "mode": "REQUIRED"
+  },
+  {
+    "name": "dist_seguridad",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "distancia_limite",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "id_place",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "nombre_place",
+    "type": "STRING",
+    "mode": "NULLABLE"
+  },
+  {
+    "name": "radio_zona",
+    "type": "FLOAT",
+    "mode": "NULLABLE"
+  }
+]
+EOF
+}
+resource "google_compute_global_address" "datastream_range_nuevo" {
+  name          = "rango-datastream-v4"
+  purpose       = "VPC_PEERING"
+  address_type  = "INTERNAL"
+  prefix_length = 16
+  network       = "projects/${var.project_id}/global/networks/default"
+}
+# resource "google_service_networking_connection" "private_vpc_connection" {
+#   network                 = "projects/${var.project_id}/global/networks/default"
+#   service                 = "servicenetworking.googleapis.com"
+#   reserved_peering_ranges = [google_compute_global_address.datastream_range_nuevo.name ]
+# }
+
 resource "google_sql_database_instance" "cloud_sql_instance" {
     name = var.cloud_sql_instance_name
     database_version = "POSTGRES_15"
@@ -93,7 +213,17 @@ resource "google_sql_database_instance" "cloud_sql_instance" {
     deletion_protection = false
     settings {
         tier = "db-f1-micro"
+        database_flags {
+          name = "cloudsql.logical_decoding"
+          value = "on"
+          }
+        ip_configuration {
+            ipv4_enabled    = false
+            private_network = "projects/${var.project_id}/global/networks/default" # La red VPC
+            enable_private_path_for_google_cloud_services = true
+        }
     }
+    #depends_on = [google_service_networking_connection.private_vpc_connection]
 }
 resource "google_sql_database" "database"{
     name = var.cloud_sql_instance_name
@@ -120,42 +250,56 @@ resource "google_project_iam_member" "cloud_run_roles" {
 }
 
 resource "google_cloud_run_v2_job" "crear_tablas" {
-    name = "crear-tablas"
-    location = var.region
+    name                = "crear-tablas"
+    location            = var.region
     deletion_protection = false
+
     template {
-        template{
+        template {
             service_account = google_service_account.cloud_run.email
+            # vpc_access {
+            #     network_interfaces {
+            #         network    = data.google_compute_network.default.id
+            #         subnetwork = data.google_compute_subnetwork.default.id
+            #     }
+            #     egress = "PRIVATE_RANGES_ONLY"
+            # }
             containers {
                 image = var.container_image
                 args = [
-                    var.db_user, var.db_password, google_sql_database.database.name, 
-                    google_sql_database_instance.cloud_sql_instance.connection_name
+                    var.db_user, 
+                    var.db_password, 
+                    google_sql_database.database.name, 
+                    google_sql_database_instance.cloud_sql_instance.private_ip_address
                 ]
-                volume_mounts {
-                  name = "cloudsql"
-                  mount_path = "/cloudsql"
-                }
+            #     volume_mounts {
+            #       name = "cloudsql"
+            #       mount_path = "/cloudsql"
+            #     }
+            # }
+            # volumes {
+            #     name = "cloudsql"
+            #     cloud_sql_instance {
+            #         instances = [google_sql_database_instance.cloud_sql_instance.connection_name]
+            #     }
             }
-            volumes {
-                name = "cloudsql"
-                cloud_sql_instance {
-                    instances = [google_sql_database_instance.cloud_sql_instance.connection_name]
-                }
-            }
+            
         }
     }
     lifecycle {
         ignore_changes = [
-            # Ignora cambios en la imagen (porque Cloud Build pondrá una nueva con cada commit)
             template[0].template[0].containers[0].image,
-            
             client,
             client_version,
             launch_stage
         ]
     }
-    depends_on = [ google_project_iam_member.cloud_run_roles, google_sql_user.db_user ]
+    depends_on = [ 
+        google_project_iam_member.cloud_run_roles, 
+        google_sql_user.db_user,
+        docker_registry_image.init_db_push,
+        google_sql_database_instance.cloud_sql_instance
+    ]
 }
 
 # resource "null_resource" "ejecutar_job" {
@@ -177,6 +321,37 @@ resource "google_artifact_registry_repository" "mi_repo" {
   format        = "DOCKER"
 }
 
+resource "docker_image" "init_db" {
+  name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/crear_tablas:latest"
+  build {
+    context = path.module
+    dockerfile = "Dockerfile"
+  }
+}
+
+resource "docker_registry_image" "init_db_push" {
+  name = docker_image.init_db.name
+  keep_remotely = true
+}
+
+# --- IMAGEN 2: GENERADOR ---
+locals {
+  generador_hash = sha1(join("", [for f in fileset("${path.module}/../api", "**") : filesha1("${path.module}/../api/${f}")]))
+}
+resource "docker_image" "generador" {
+  name = "${var.region}-docker.pkg.dev/${var.project_id}/${google_artifact_registry_repository.mi_repo.name}/api:latest"
+  build {
+    context = "${path.module}/../api"
+    dockerfile = "${path.module}/../api/Dockerfile"
+  }
+  depends_on = [ docker_image.init_db ]
+}
+
+resource "docker_registry_image" "generador_push" {
+  name = docker_image.generador.name
+  keep_remotely = true
+}
+
 resource "google_service_account" "cloudbuild_sa" {
   account_id   = "my-build-sa"
   display_name = "Service Account para Cloud Build (Terraform)"
@@ -191,14 +366,33 @@ resource "google_project_iam_member" "build_sa_roles" {
     "roles/iam.serviceAccountUser",
     "roles/storage.objectViewer",
     "roles/cloudbuild.builds.builder",
-    "roles/developerconnect.readTokenAccessor"
+    "roles/developerconnect.readTokenAccessor",
+    "roles/cloudbuild.builds.editor",
+    "roles/storage.objectAdmin",
+    "roles/dataflow.developer",
+    "roles/iam.serviceAccountUser"
   ])
 
   project = var.project_id
   role    = each.value
   member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
+# data "google_project" "project" {
+#   project_id = var.project_id
+# }
 
+# resource "google_project_iam_member" "default_cloudbuild_roles" {
+#   for_each = toset([
+#     "roles/cloudbuild.builds.editor",   
+#     "roles/artifactregistry.writer",  
+#     "roles/storage.objectAdmin" 
+#   ])
+
+#   project = var.project_id
+#   role    = each.value
+  
+#   member  = "serviceAccount:${data.google_project.project.number}@cloudbuild.gserviceaccount.com"
+# }
 resource "google_service_account" "firestore_sa2" {
   account_id   = "firestore-sa"
   display_name = "Service Account para Firestore"
@@ -233,7 +427,8 @@ resource "google_project_iam_member" "dataflow_sa_roles" {
     "roles/datastore.user",
     "roles/dataflow.worker",     
     "roles/bigquery.jobUser",
-    "roles/bigquery.dataEditor"
+    "roles/bigquery.dataEditor",
+    "roles/logging.viewer"
   ])
   project = var.project_id
   role    = each.value
@@ -260,13 +455,16 @@ resource "google_project_iam_member" "dataflow_sa_roles" {
 resource "google_service_account" "api_sa" {
   account_id   = "api-backend-sa"
   display_name = "Service Account para API Cloud Run"
-  description  = "Cuenta con permisos mínimos para SQL y Pub/Sub"
+  description  = "Cuenta con permisos para SQL, Pub/Sub y Secret Manager"
 }
   
 resource "google_project_iam_member" "api_sa_roles" {
   for_each = toset([
     "roles/cloudsql.client",
-    "roles/pubsub.publisher"
+    "roles/pubsub.publisher",
+    "roles/secretmanager.secretAccessor",
+    "roles/logging.logWriter",
+    "roles/artifactregistry.writer"
   ])
 
   project = var.project_id
@@ -277,12 +475,21 @@ resource "google_project_iam_member" "api_sa_roles" {
 resource "google_cloud_run_v2_service" "api_backend" {
   name     = "api-backend-policia"
   location = var.region
-
+  deletion_protection = false
   template {
     service_account = google_service_account.api_sa.email
     
+    
+    vpc_access {
+      network_interfaces {
+         network    = "projects/${var.project_id}/global/networks/default" 
+        subnetwork = "projects/${var.project_id}/regions/${var.region}/subnetworks/default"  
+      }
+      egress = "PRIVATE_RANGES_ONLY" 
+    }
+
     containers {
-      image = var.container_image
+      image = docker_registry_image.generador_push.name
       env {
         name  = "PROJECT_ID"
         value = var.project_id
@@ -299,6 +506,7 @@ resource "google_cloud_run_v2_service" "api_backend" {
         name  = "DB_NAME"
         value = google_sql_database.database.name
       }
+      
       env {
         name  = "DB_PASS"
         value = var.db_password 
@@ -308,13 +516,156 @@ resource "google_cloud_run_v2_service" "api_backend" {
 
   lifecycle {
     ignore_changes = [
-      # Ignora cambios en la imagen (porque Cloud Build pondrá una nueva con cada commit)
-      template[0].containers[0].image,
       client,
       client_version,
       launch_stage
     ]
   }
 
-  depends_on = [google_project_iam_member.api_sa_roles] 
+  depends_on = [google_project_iam_member.api_sa_roles,
+  docker_registry_image.generador_push] 
 }
+
+resource "google_cloud_run_v2_service_iam_member" "api_invoker" {
+  project  = google_cloud_run_v2_service.api_backend.project
+  location = google_cloud_run_v2_service.api_backend.location
+  name     = google_cloud_run_v2_service.api_backend.name
+  role     = "roles/run.invoker"
+  member   = "allUsers"
+}
+resource "google_compute_firewall" "allow_datastream_to_sql" {
+  name    = "allow-datastream-to-sql"
+  network = "default" 
+
+  allow {
+    protocol = "tcp"
+    ports    = ["5432"]
+  }
+  source_ranges = ["10.2.0.0/29"] 
+  
+
+}
+
+
+
+# 1. EL TÚNEL SECRETO (Private Connection)
+# Como la BD no tiene IP pública, Datastream necesita un túnel VPN hacia tu red.
+resource "google_datastream_private_connection" "private_connection" {
+  display_name          = "Conexión privada Datastream"
+  location              = var.region
+  private_connection_id = "datastream-private-conn"
+
+  vpc_peering_config {
+    vpc    = "projects/${var.project_id}/global/networks/default"
+    subnet = "10.2.0.0/29" 
+  }
+  depends_on = [ google_project_service.datastream_api ]
+}
+
+# 2. EL PERFIL DE ORIGEN (La conexión a Cloud SQL)
+# resource "google_datastream_connection_profile" "postgres_source" {
+#   display_name          = "Origen Cloud SQL"
+#   location              = var.region
+#   connection_profile_id = "cloudsql-source-profile"
+
+#   postgresql_profile {
+#     hostname = google_sql_database_instance.cloud_sql_instance.private_ip_address
+#     port     = 5432
+#     username = var.db_user
+#     password = var.db_password
+#     database = google_sql_database.database.name
+#   }
+
+#   # Le decimos que use el túnel que creamos arriba
+#   private_connectivity {
+#     private_connection = google_datastream_private_connection.private_connection.id
+#   }
+#   depends_on = [
+#     google_project_service.datastream_api,
+#     google_compute_firewall.allow_datastream_to_sql
+#     ]
+# }
+
+# # 3. EL PERFIL DE DESTINO (La conexión a BigQuery)
+# resource "google_datastream_connection_profile" "bigquery_dest" {
+#   display_name          = "Destino BigQuery"
+#   location              = var.region
+#   connection_profile_id = "bigquery-dest-profile"
+
+#   bigquery_profile {}
+#   depends_on = [ google_project_service.datastream_api ]
+# }
+
+# # 4. LA TUBERÍA (El Stream que une todo)
+# resource "google_datastream_stream" "cloudsql_to_bq" {
+#   display_name  = "Replicacion BBDD a BigQuery"
+#   location      = var.region
+#   stream_id     = "replicacion-bq"
+#   desired_state = "RUNNING" 
+
+#   source_config {
+#     source_connection_profile = google_datastream_connection_profile.postgres_source.id
+#     postgresql_source_config {
+#       replication_slot = "datastream_slot" ##funciona como un marcapáginas, para saber por donde se quedó leyendo
+#       publication      = "datastream_pub"
+#     }
+#   }
+
+#   destination_config {
+#     destination_connection_profile = google_datastream_connection_profile.bigquery_dest.id
+#     bigquery_destination_config {
+#       data_freshness = "0s" # Tiempo real absoluto
+#       single_target_dataset {
+#         dataset_id = google_bigquery_dataset.bigquery_dataset.dataset_id
+#       }
+#     }
+#   }
+  
+
+
+#   # Esto hace que copie los datos que ya existan, además de los nuevos
+#   backfill_all {} 
+
+#   # Terraform debe esperar a que el túnel exista antes de crear la tubería
+#   depends_on = [
+#     google_project_service.datastream_api,
+#     google_datastream_private_connection.private_connection
+#   ]
+# }
+
+/* =================================================================================
+🚀 CONFIGURACIÓN DE DATASTREAM (CLOUD SQL -> BIGQUERY)
+=================================================================================
+NOTA IMPORTANTE: La replicación de datos en tiempo real mediante Datastream se 
+ha configurado MANUALMENTE desde la consola de GCP y se ha excluido de Terraform.
+
+¿POR QUÉ?
+Google Cloud tiene una restricción física de red llamada "Peering Transitivo". 
+Al intentar conectar Datastream -> Red VPC por defecto -> Cloud SQL (IP Privada), 
+el tráfico se bloquea por defecto, provocando errores de timeout. 
+Para evitar el coste y la complejidad de desplegar un proxy intermedio (HAProxy) 
+en una máquina virtual, optamos por una solución híbrida más limpia y segura.
+
+ARQUITECTURA Y OPCIONES ESCOGIDAS:
+
+  1. Cloud SQL (Dual IP): 
+      - IP Privada: Sigue siendo la vía exclusiva para nuestra API en Cloud Run.
+      - IP Pública: Se activó con un "IP Allowlist" (candado de red) estricto. 
+        Solo las 5 IPs oficiales de Datastream (europe-west6) tienen permiso 
+        para llamar a esta puerta. Es invisible e inaccesible para el resto de internet.
+
+  2. Perfil de Origen (PostgreSQL):
+      - Conexión vía IP Pública + Allowlist.
+      - Se crearon manualmente en la BD: PUBLICATION 'datastream_pub' y 
+        REPLICATION SLOT 'datastream_slot' para la lectura secuencial (CDC).
+      - Se seleccionaron EXCLUSIVAMENTE las 5 tablas de negocio (agresores, 
+        victimas, rel_places_victimas, rel_victimas_agresores, safe_places), 
+        ignorando los esquemas internos de Postgres (pg_catalog, etc.).
+
+  3. Perfil de Destino y Stream (BigQuery):
+      - Schema grouping: "Single dataset for all schemas" para centralizar todo.
+      - Stream write mode: "MERGE". Elegimos Merge en lugar de Append-only para 
+        mantener un espejo exacto del estado actual de las coordenadas, evitando 
+        duplicar filas en el Data Warehouse con el histórico de movimientos.
+      - Staleness limit: "0 seconds" (Tiempo real absoluto para las alertas).
+   ================================================================================= */

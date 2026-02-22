@@ -3,9 +3,10 @@ import json
 from flask import Flask, jsonify, request
 from datetime import datetime
 from google.cloud import pubsub_v1
-from google.cloud import secretmanager
+#from google.cloud import secretmanager
 from google.cloud.sql.connector import Connector, IPTypes
 import pg8000
+
 
 app = Flask(__name__)
 PROJECT_ID = os.getenv("PROJECT_ID", "data-project-streaming-487217")
@@ -15,24 +16,44 @@ publisher = pubsub_v1.PublisherClient()
 TOPIC_AGRESORES = publisher.topic_path(PROJECT_ID, "agresores-datos")
 TOPIC_VICTIMAS = publisher.topic_path(PROJECT_ID, "victimas-datos")
 
-def obtener_password_secreto():
-    client = secretmanager.SecretManagerServiceClient()
+connector = Connector()
 
-    secret_name = "db-password-dp" 
-    
-    ruta_secreto = f"projects/{PROJECT_ID}/secrets/{secret_name}/versions/latest"
-    respuesta = client.access_secret_version(request={"name": ruta_secreto})
-    return respuesta.payload.data.decode("UTF-8")
-
-def get_db_connection():
-    """Crea la conexión segura a Cloud SQL."""
-    connector = Connector()
+def getconn():
     conn = connector.connect(
-        os.getenv("INSTANCE_CONNECTION_NAME"), "pg8000",
-        user=os.getenv("DB_USER"), password=os.getenv("DB_PASS"),
-        db=os.getenv("DB_NAME"), ip_type=IPTypes.PRIVATE
+        os.getenv("INSTANCE_CONNECTION_NAME"),
+        "pg8000",
+        user=os.getenv("DB_USER"),
+        password=os.getenv("DB_PASS"),
+        db=os.getenv("DB_NAME"),
+        ip_type=IPTypes.PRIVATE
     )
     return conn
+
+# import pg8000
+# import os
+
+# def getconn():
+#     """Crea la conexión DIRECTA a la IP privada de Cloud SQL."""
+#     conn = pg8000.connect(
+#         user=os.getenv("DB_USER"), 
+#         password=os.getenv("DB_PASS"),
+#         database=os.getenv("DB_NAME"),
+#         host="172.25.64.3", 
+#         port=5432
+#     )
+#     return conn
+
+# def obtener_password_secreto():
+#     client = secretmanager.SecretManagerServiceClient()
+
+#     secret_name = "db-password-dp" 
+    
+#     ruta_secreto = f"projects/{PROJECT_ID}/secrets/{secret_name}/versions/latest"
+#     respuesta = client.access_secret_version(request={"name": ruta_secreto})
+#     return respuesta.payload.data.decode("UTF-8")
+
+def get_db_connection():
+    return getconn()
 
 # =========================================================
 # 📡 1. MÓDULO DE INGESTA DE DISPOSITIVOS GPS (Hacia Pub/Sub)
@@ -86,6 +107,7 @@ def obtener_datos_dashboard():
         
         # Devolver el payload gigante con todo estructurado
         return jsonify({
+            "prueba": "prueba",
             "victimas": victimas,
             "agresores": agresores,
             "safe_places": lugares,
@@ -95,7 +117,26 @@ def obtener_datos_dashboard():
         
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
 
+@app.route("/api/generador/usuarios", methods=["GET"])
+def obtener_usuarios_para_simulacion():
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        cursor.execute("SELECT id_victima FROM victimas")
+        victimas = [row[0] for row in cursor.fetchall()]
+        
+        cursor.execute("SELECT id_agresor FROM agresores")
+        agresores = [row[0] for row in cursor.fetchall()]
+        
+        conn.close()
+        return jsonify({"victimas": victimas, "agresores": agresores}), 200
+    except Exception as e:
+        app.logger.error(f"Error en endpoint generador: {e}")
+        return jsonify({"error": str(e)}), 500
+    
 
 # ----------------- POST: CREACIONES INDIVIDUALES -----------------
 

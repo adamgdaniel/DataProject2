@@ -13,6 +13,7 @@ import psycopg2
 from google.cloud import firestore
 import math
 from dotenv import load_dotenv
+from google.cloud import secretmanager
 
 load_dotenv()
 
@@ -35,19 +36,25 @@ def jsonEncode(elemento):
     return mensaje_str.encode('utf-8')
 
 def normalizeVictimas(event):
+    coords = event["coordinates"]
+    if isinstance(coords, list):
+        coords = f"{coords[0]},{coords[1]}"
    
     return {
         "user_id": event["user_id"],
-        "coordinates": event["coordinates"],
+        "coordinates": str(coords),
         "timestamp": event["timestamp"],
         "tipo": "victima",
     }
 
 def normalizeAgresores(event):
+    coords = event["coordinates"]
+    if isinstance(coords, list):
+        coords = f"{coords[0]},{coords[1]}"
   
     return {
         "user_id": event["user_id"],
-        "coordinates": event["coordinates"],
+        "coordinates": str(coords),
         "timestamp": event["timestamp"],
         "tipo": "agresor",
     }
@@ -63,17 +70,20 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
         
         for id_agresor, dist in info_victima_db['agresores'].items():
             # Ahora datos_victima tiene: user_id, coordinates, timestamp, tipo, safe_zones Y dist_seguridad
-            datos_victima['dist_seguridad'] = dist            
-            yield (id_agresor, datos_victima)
+            victima_datos = datos_victima.copy()
+            victima_datos['dist_seguridad'] = dist           
+            yield (id_agresor, victima_datos)
 
 def calcular_direccion_escape(coords_victima, coords_agresor):
-    lat_v, lon_v = coords_victima
-    lat_a, lon_a = coords_agresor
+    coordv_limpias = str(coords_victima).replace('[', '').replace(']', '')
+    coorda_limpias = str(coords_agresor).replace('[', '').replace(']', '')
+    lat_v, lon_v = map(float, coordv_limpias.split(','))
+    lat_a, lon_a = map(float, coorda_limpias.split(','))
+
 
     d_lat = lat_a - lat_v
     d_lon = lon_a - lon_v
 
-    # Calculamos el ángulo en grados
     angulo = math.degrees(math.atan2(d_lat, d_lon))
     if angulo < 0:
         angulo += 360
@@ -119,7 +129,6 @@ def detectar_match(elemento):
                 alerta = {
                     "alerta": "fisica",
                     "activa": True,
-                    "nivel": "CRITICO",
                     "id_victima": vic['user_id'],
                     "id_agresor": id_agresor,
                     "distancia_metros": dist_fisica,
@@ -151,9 +160,9 @@ def detectar_match(elemento):
                             "direccion_escape": direccion_escape,
                             "radio_zona": zona['radius'],
                             "coordenadas_agresor": datos_agresor['coordinates'],
-                            "coordenadas_place": zona['place_coordinates'],
+                            "coordenadas_place": str(zona['place_coordinates']),
                             "timestamp": datos_agresor['timestamp'],
-                            "distancia_limite": distancia_configurada,
+                            "dist_seguridad": distancia_configurada,
                         }
                         alertas_json.append(alerta)
                         print(f"🏰 JSON ALERTA GENERADO (Place): {alerta}") 
@@ -165,18 +174,25 @@ def detectar_match(elemento):
 
 class CargarDatosMaestros(beam.DoFn):
 
-    def __init__(self, db_host, db_user, db_pass, db_name):
+    def __init__(self, project_id, db_host, db_user, secret_pass, db_name):
+            self.project_id = project_id
             self.db_host = db_host
             self.db_user = db_user
-            self.db_pass = db_pass
             self.db_name = db_name
+            self.secret_pass = secret_pass
+            self.conn = None
+            
 
-    def start_bundle(self):
+    def setup(self):
+        client = secretmanager.SecretManagerServiceClient()
+        ruta_secreto = f"projects/{self.project_id}/secrets/{self.secret_pass}/versions/latest"
+        respuesta = client.access_secret_version(request={"name": ruta_secreto})
+        db_pass_seguro = respuesta.payload.data.decode("UTF-8")
         import psycopg2
         self.conn = psycopg2.connect(
             host=self.db_host, 
             user=self.db_user,
-            password=self.db_pass,
+            password=db_pass_seguro,
             dbname=self.db_name
         )
 
@@ -189,7 +205,7 @@ class CargarDatosMaestros(beam.DoFn):
                     # --- 1. Cargar Agresores-Víctimas ---
             cursor.execute("SELECT id_victima, id_agresor, dist_seguridad FROM rel_victimas_agresores")
             for vic, agr, dist in cursor.fetchall():
-                vic, agr = str(vic), str(agr)
+                vic, agr = str(vic).strip(), str(agr).strip()
                 dist_seguridad = float(dist) if dist is not None else 500.0
                 if vic not in datos_maestros:
                     datos_maestros[vic] = {'agresores': {}, 'zonas': []}
@@ -227,7 +243,7 @@ class CargarDatosMaestros(beam.DoFn):
         #           {"place_name": "Comisaría Centro", "id_place": "place_001", "place_coordinates": (39.4700, -0.3765), "radius": 300}
 
 
-    def finish_bundle(self):
+    def teardown(self):
         if self.conn:
             self.conn.close()
 
@@ -293,45 +309,23 @@ def run():
             '--firestore_collection',
             required=True,
             help='Firestore collection name.')
-    
-    parser.add_argument(
-                '--alertas_policia_topic',
-                required=False,
-                default="policia-alertas",
-                help='Pub/Sub topic for police notifications.')
-    parser.add_argument(
-                '--alertas_agresores_topic',
-                required=False,
-                default= "agresores-alertas",
-                help='Pub/Sub topic for agressor notifications.')
-    parser.add_argument(
-                '--alertas_victimas_topic',
-                required=False,
-                default= "victimas-alertas",
-                help='Pub/Sub topic for victim notifications.')
-
-    
 
     
     parser.add_argument(
                 '--bigquery_dataset',
                 required=False,
-                help='BigQuery dataset name.')
+                default="analitical_dataset5",
+                help='BigQuery dataset name.')    
     
     parser.add_argument(
-                '--user_bigquery_table',
-                required=False,
-                help='User BigQuery table name.')
-    
-    parser.add_argument(
-                '--episode_bigquery_table',
-                required=False,
-                help='Episode BigQuery table name.')
+                '--alertas_bigquery_table',
+                required=True,
+                help='Alertas BigQuery table name.')
     
     #info de la db
     parser.add_argument('--db_host', required=True)
     parser.add_argument('--db_user', required=True)
-    parser.add_argument('--db_pass', required=True)
+    parser.add_argument('--db_pass', required=False, default="db-password-dp") 
     parser.add_argument('--db_name', required=True)
     
     # Parseamos los argumentos
@@ -345,15 +339,16 @@ def run():
     # Nombres de suscripciones
     sub_v = f"projects/{known_args.project_id}/subscriptions/{known_args.victimas_pubsub_subscription_name}"
     sub_a = f"projects/{known_args.project_id}/subscriptions/{known_args.agresores_pubsub_subscription_name}"
-    topic_policia = f"projects/{known_args.project_id}/topics/{known_args.alertas_policia_topic}"
     firestore_database = known_args.firestore_db
+    ruta_bq = f"{known_args.project_id}:{known_args.bigquery_dataset}.{known_args.alertas_bigquery_table}"
+    esquema_alertas = "alerta:STRING, activa:BOOLEAN, nivel:STRING, id_victima:STRING, id_agresor:STRING, distancia_metros:FLOAT, direccion_escape:STRING, coordenadas_agresor:STRING, coordenadas_victima:STRING, coordenadas_place:STRING, timestamp:TIMESTAMP, dist_seguridad:FLOAT, distancia_limite:FLOAT, id_place:STRING, nombre_place:STRING, radio_zona:FLOAT"
    
     with beam.Pipeline(options=options) as p:
         datos_side_input = (
             p
             | "Reloj" >> PeriodicImpulse(fire_interval=900, apply_windowing=True)
             | "VentanaGlobal" >> beam.WindowInto(window.GlobalWindows(), trigger=trigger.Repeatedly(trigger.AfterCount(1)), accumulation_mode=trigger.AccumulationMode.DISCARDING)
-            | "CargarDB" >> beam.ParDo(CargarDatosMaestros(db_host=known_args.db_host, db_user=known_args.db_user, db_pass=known_args.db_pass, db_name=known_args.db_name))
+            | "CargarDB" >> beam.ParDo(CargarDatosMaestros(project_id=known_args.project_id,db_host=known_args.db_host, db_user=known_args.db_user, secret_pass=known_args.db_pass, db_name=known_args.db_name))
             )
 
         vista_datos_maestros = beam.pvalue.AsSingleton(datos_side_input, default_value={})
@@ -376,16 +371,28 @@ def run():
         )
 
         # Match
-        (
+        alertas = (
             (victimas, agresores)
             | "UnirTodo" >> beam.Flatten()
             | "Ventana15s" >> beam.WindowInto(FixedWindows(15))
             | "Agrupar" >> beam.GroupByKey() #juntamos en base a key que es el agresor id
             | "Calcular" >> beam.FlatMap(detectar_match)
-            | "EnviarFirestore" >> beam.ParDo(FormatFirestoreDocument(firestore_collection=known_args.firestore_collection, project_id=known_args.project_id, firestore_database=firestore_database))
-            | "Serializar" >> beam.Map(jsonEncode)
-            | "EnviarPolicia" >> beam.io.WriteToPubSub(topic=topic_policia)
         )
+
+
+        (alertas
+         | "EnviarFirestore" >> beam.ParDo(FormatFirestoreDocument(firestore_collection=known_args.firestore_collection, project_id=known_args.project_id, firestore_database=firestore_database))
+         )
+
+
+        (alertas
+         | "EscribirBQ" >> beam.io.WriteToBigQuery(
+                table=ruta_bq,
+                schema=esquema_alertas,
+                write_disposition=beam.io.BigQueryDisposition.WRITE_APPEND,
+                create_disposition=beam.io.BigQueryDisposition.CREATE_IF_NEEDED
+            ))
+
 
 if __name__ == '__main__':
     logging.getLogger().setLevel(logging.INFO)
