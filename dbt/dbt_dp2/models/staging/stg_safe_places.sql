@@ -5,7 +5,7 @@ with source as (
 renamed as (
     select
         id_place,
-        place_coordinates as coordenadas_place, -- Unificamos el idioma si prefieres
+        place_coordinates as coordenadas_place,
         radius as radio_metros,
         place_name as nombre_place
     from source

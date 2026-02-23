@@ -4,7 +4,6 @@ from sqlalchemy import text
 import time
 
 def run():
-    # Seguimos esperando 4 argumentos, pero el último ahora será la IP Privada
     if len(sys.argv) < 5:
         print(f"ERROR: Se esperaban 4 argumentos. Recibidos: {sys.argv}")
         sys.exit(1)

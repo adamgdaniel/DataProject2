@@ -20,27 +20,7 @@ resource "google_pubsub_subscription" "agresores_datos_sub" {
     name = var.subscription_agresores_datos
     topic = google_pubsub_topic.agresores_datos.name
 }
-# resource "google_pubsub_topic" "policia_alertas" {
-#     name = var.topic_policia_alertas
-# }
-# resource "google_pubsub_subscription" "policia_alertas_sub" {
-#     name = var.subscription_policia_alertas
-#     topic = google_pubsub_topic.policia_alertas.name
-# }
-# resource "google_pubsub_topic" "victimas_alertas" {
-#     name = var.topic_victimas_alertas
-# }
-# resource "google_pubsub_subscription" "victimas_alertas_sub" {
-#     name = var.subscription_victimas_alertas
-#     topic = google_pubsub_topic.victimas_alertas.name
-# }
-# resource "google_pubsub_topic" "agresores_alertas" {
-#     name = var.topic_agresores_alertas
-# }
-# resource "google_pubsub_subscription" "agresores_alertas_sub" {
-#     name = var.subscription_agresores_alertas
-#     topic = google_pubsub_topic.agresores_alertas.name
-# }
+
 resource "google_storage_bucket" "bucket_victimas_datos" {
     name = var.bucket_imagenes
     location = var.region
@@ -68,7 +48,7 @@ resource "google_firestore_document" "doc_inicializacion" {
       "integerValue": "0"
     },
     "tipo_alerta": {
-      "stringValue": "inicializacion" # Para que no sea ni roja ni ámbar
+      "stringValue": "inicializacion"
     },
     "coordenadas_victima": {
       "geoPointValue": {
@@ -107,7 +87,6 @@ resource "google_bigquery_table" "tabla_alertas" {
     field = "timestamp"
   }
 
-  # Esquema completo de la tabla
   schema = <<EOF
 [
   {
@@ -200,11 +179,6 @@ resource "google_compute_global_address" "datastream_range_nuevo" {
   prefix_length = 16
   network       = "projects/${var.project_id}/global/networks/default"
 }
-# resource "google_service_networking_connection" "private_vpc_connection" {
-#   network                 = "projects/${var.project_id}/global/networks/default"
-#   service                 = "servicenetworking.googleapis.com"
-#   reserved_peering_ranges = [google_compute_global_address.datastream_range_nuevo.name ]
-# }
 
 resource "google_sql_database_instance" "cloud_sql_instance" {
     name = var.cloud_sql_instance_name
@@ -223,7 +197,6 @@ resource "google_sql_database_instance" "cloud_sql_instance" {
             enable_private_path_for_google_cloud_services = true
         }
     }
-    #depends_on = [google_service_networking_connection.private_vpc_connection]
 }
 resource "google_sql_database" "database"{
     name = var.cloud_sql_instance_name
@@ -257,13 +230,6 @@ resource "google_cloud_run_v2_job" "crear_tablas" {
     template {
         template {
             service_account = google_service_account.cloud_run.email
-            # vpc_access {
-            #     network_interfaces {
-            #         network    = data.google_compute_network.default.id
-            #         subnetwork = data.google_compute_subnetwork.default.id
-            #     }
-            #     egress = "PRIVATE_RANGES_ONLY"
-            # }
             containers {
                 image = var.container_image
                 args = [
@@ -272,16 +238,6 @@ resource "google_cloud_run_v2_job" "crear_tablas" {
                     google_sql_database.database.name, 
                     google_sql_database_instance.cloud_sql_instance.private_ip_address
                 ]
-            #     volume_mounts {
-            #       name = "cloudsql"
-            #       mount_path = "/cloudsql"
-            #     }
-            # }
-            # volumes {
-            #     name = "cloudsql"
-            #     cloud_sql_instance {
-            #         instances = [google_sql_database_instance.cloud_sql_instance.connection_name]
-            #     }
             }
             
         }
@@ -302,18 +258,6 @@ resource "google_cloud_run_v2_job" "crear_tablas" {
     ]
 }
 
-# resource "null_resource" "ejecutar_job" {
-#   # Solo se ejecutará si el Job se crea o cambia
-#   triggers = {
-#     job_id = google_cloud_run_v2_job.init_db_job.id
-#   }
-
-#   provisioner "local-exec" {
-#     # Este comando se ejecuta en tu máquina al hacer el apply
-#     # --wait asegura que Terraform no termine hasta que las tablas estén creadas
-#     command = "gcloud run jobs execute ${google_cloud_run_v2_job.init_db_job.name} --region ${var.region} --project ${var.project_id} --wait"
-#   }
-# }
 resource "google_artifact_registry_repository" "mi_repo" {
   location      = var.region
   repository_id = "repo-imagenes-proyecto"
@@ -334,7 +278,6 @@ resource "docker_registry_image" "init_db_push" {
   keep_remotely = true
 }
 
-# --- IMAGEN 2: GENERADOR ---
 locals {
   generador_hash = sha1(join("", [for f in fileset("${path.module}/../api", "**") : filesha1("${path.module}/../api/${f}")]))
 }
@@ -377,22 +320,6 @@ resource "google_project_iam_member" "build_sa_roles" {
   role    = each.value
   member  = "serviceAccount:${google_service_account.cloudbuild_sa.email}"
 }
-# data "google_project" "project" {
-#   project_id = var.project_id
-# }
-
-# resource "google_project_iam_member" "default_cloudbuild_roles" {
-#   for_each = toset([
-#     "roles/cloudbuild.builds.editor",   
-#     "roles/artifactregistry.writer",  
-#     "roles/storage.objectAdmin" 
-#   ])
-
-#   project = var.project_id
-#   role    = each.value
-  
-#   member  = "serviceAccount:${data.google_project.project.number}@cloudbuild.gserviceaccount.com"
-# }
 resource "google_service_account" "firestore_sa2" {
   account_id   = "firestore-sa"
   display_name = "Service Account para Firestore"
@@ -436,24 +363,7 @@ resource "google_project_iam_member" "dataflow_sa_roles" {
   role    = each.value
   member  = "serviceAccount:${google_service_account.dataflow_sa.email}"
 }
-# resource "google_cloudbuild_trigger" "dataflow_deploy_trigger" {
-#   name        = "deploy-dataflow-on-push"
-#   description = "Despliega/Actualiza Dataflow al hacer push a main"
-#   project     = var.project_id
-#   github {
-#     owner = var.github_owner
-#     name  = var.github_repo
-#     push {
-#       branch = "^main$"
-#     }
-#   }
-#   filename = "dataflow/cloudbuild.yaml"
-#   substitutions = {
-#     _SERVICE_ACCOUNT = var.dataflow_sa_email
-#     _REGION          = var.region
-#   }
-#   included_files = ["dataflow/**"]
-# }
+
 resource "google_service_account" "api_sa" {
   account_id   = "api-backend-sa"
   display_name = "Service Account para API Cloud Run"
@@ -548,10 +458,6 @@ resource "google_compute_firewall" "allow_datastream_to_sql" {
 
 }
 
-
-
-# 1. EL TÚNEL SECRETO (Private Connection)
-# Como la BD no tiene IP pública, Datastream necesita un túnel VPN hacia tu red.
 resource "google_datastream_private_connection" "private_connection" {
   display_name          = "Conexión privada Datastream"
   location              = var.region
