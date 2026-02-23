@@ -38,9 +38,8 @@ steps:
            '--temp-location=gs://$_DATAFLOW_BASE_BUCKET/temp',
            '--service-account-email=$_SERVICE_ACCOUNT', 
            '--max-workers=15',
-           '--update'
-          #  '--update',
-          #  '--enable-streaming-engine'
+           '--update',
+           '--enable-streaming-engine'
     ]
     waitFor: ['Build Dataflow Flex Template']
 
