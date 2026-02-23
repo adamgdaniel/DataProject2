@@ -64,7 +64,7 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
         datos_victima['safe_zones'] = info_victima_db['zonas']
         
         for id_agresor, dist in info_victima_db['agresores'].items():
-            # Ahora datos_victima tiene: user_id, coordinates, timestamp, tipo, safe_zones Y dist_seguridad
+
             victima_datos = datos_victima.copy()
             victima_datos['dist_seguridad'] = dist           
             yield (id_agresor, victima_datos)
@@ -94,13 +94,9 @@ def calcular_direccion_escape(coords_victima, coords_agresor):
     else: return "Este"
 
 def detectar_match(elemento):
-    """
-    Recibe: ('ag_001', [lista_de_usuaros_mezclados])
-    Devuelve: [alerta1, alerta2, ...] 
-    """
+
     id_agresor, usuarios = elemento
 
-    # Separar al agresor de las víctimas
     datos_agresor = None
     victimas = []
 
@@ -248,7 +244,7 @@ class FormatFirestoreDocument(beam.DoFn):
         self.db = firestore.Client(project=self.project_id, database=self.database)
 
     def process(self, element):
-        #element ya es el diccionario
+
         if element.get('alerta') == 'place':
             doc_id = f"{element['id_place']}_{element['id_agresor']}"
         else:
@@ -318,12 +314,12 @@ def run():
     parser.add_argument('--db_pass', required=False, default="db-password-dp") 
     parser.add_argument('--db_name', required=True)
     
-    # Parseamos los argumentos
+    # Parseamos
     known_args, beam_args = parser.parse_known_args()
-    # Creamos las opciones pasándole los argumentos de Beam
+    # Pipeline Options
     options = PipelineOptions(beam_args)
     options.view_as(StandardOptions).streaming = True
-    # Configuramos save_main_session para que las funciones globales viajen a los workers
+
     options.view_as(SetupOptions).save_main_session = True
     
 
