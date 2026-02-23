@@ -1,0 +1,9 @@
+streamlit
+pandas
+numpy
+pydeck
+google-cloud-firestore
+psycopg2-binary
+python-dotenv
+requests
+google-cloud-storage

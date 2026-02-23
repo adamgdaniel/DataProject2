@@ -6,3 +6,4 @@ terraform.*
 *.tfvars
 LICENSE.txt
 firestore-key.json
+google-service-account-key.json
