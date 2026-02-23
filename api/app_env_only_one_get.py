@@ -29,35 +29,13 @@ def getconn():
     )
     return conn
 
-# import pg8000
-# import os
-
-# def getconn():
-#     """Crea la conexión DIRECTA a la IP privada de Cloud SQL."""
-#     conn = pg8000.connect(
-#         user=os.getenv("DB_USER"), 
-#         password=os.getenv("DB_PASS"),
-#         database=os.getenv("DB_NAME"),
-#         host="172.25.64.3", 
-#         port=5432
-#     )
-#     return conn
-
-# def obtener_password_secreto():
-#     client = secretmanager.SecretManagerServiceClient()
-
-#     secret_name = "db-password-dp" 
-    
-#     ruta_secreto = f"projects/{PROJECT_ID}/secrets/{secret_name}/versions/latest"
-#     respuesta = client.access_secret_version(request={"name": ruta_secreto})
-#     return respuesta.payload.data.decode("UTF-8")
 
 def get_db_connection():
     return getconn()
 
-# =========================================================
-# 📡 1. MÓDULO DE INGESTA DE DISPOSITIVOS GPS (Hacia Pub/Sub)
-# =========================================================
+
+# 1. MÓDULO DE INGESTA DE DISPOSITIVOS GPS (Hacia Pub/Sub)
+
 @app.route("/agresores", methods=["POST"])
 def ingest_agresor():
     data = request.json
@@ -71,11 +49,11 @@ def ingest_victima():
     return jsonify({"status": "success"}), 201
 
 
-# =========================================================
-# 👮‍♂️ 2. MÓDULO DASHBOARD POLICÍA (Hacia Cloud SQL)
-# =========================================================
 
-# ----------------- GET: LECTURA MAESTRA PARA STREAMLIT -----------------
+# 2. MÓDULO DASHBOARD POLICÍA
+
+
+# ----------------- GET: Lectura datos para streamlit -----------------
 @app.route("/api/policia/dashboard_data", methods=["GET"])
 def obtener_datos_dashboard():
     """Devuelve toda la info necesaria para el Dashboard en una sola petición."""
@@ -105,7 +83,7 @@ def obtener_datos_dashboard():
 
         conn.close()
         
-        # Devolver el payload gigante con todo estructurado
+        
         return jsonify({
             "prueba": "prueba",
             "victimas": victimas,
@@ -138,7 +116,7 @@ def obtener_usuarios_para_simulacion():
         return jsonify({"error": str(e)}), 500
     
 
-# ----------------- POST: CREACIONES INDIVIDUALES -----------------
+# ----------------- POST: Insertar info -----------------
 
 @app.route("/api/policia/nueva_victima", methods=["POST"])
 def crear_victima():
@@ -222,7 +200,7 @@ def relacion_victima_safe_places():
     except Exception as e:
         return jsonify({"error": str(e)}), 500
     
-# ----------------- PUT: EDICIÓN DE REGISTROS -----------------
+# ----------------- PUT: Editar registros -----------------
 
 @app.route("/api/policia/editar_victima", methods=["PUT"])
 def editar_victima():
@@ -231,7 +209,6 @@ def editar_victima():
         conn = get_db_connection()
         cursor = conn.cursor()
         foto = data.get('url_foto_victima', 'vacio')
-        # Buscamos por id_victima y actualizamos el resto de campos
         cursor.execute(
             """UPDATE victimas 
             SET nombre_victima = %s, apellido_victima = %s, url_foto_victima = %s 
@@ -290,7 +267,6 @@ def editar_relacion_victima_agresor():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        # Aquí la clave primaria está compuesta por los dos IDs, actualizamos la distancia
         cursor.execute(
             """UPDATE rel_victimas_agresores 
             SET dist_seguridad = %s 
@@ -310,8 +286,6 @@ def editar_relacion_victima_safe_place():
     try:
         conn = get_db_connection()
         cursor = conn.cursor()
-        # OJO AQUÍ: Como esta tabla solo tiene 2 columnas, para "editarla" necesitamos
-        # saber qué ID de lugar antiguo queremos cambiar por el nuevo.
         cursor.execute(
             """UPDATE rel_places_victimas 
             SET id_place = %s 
