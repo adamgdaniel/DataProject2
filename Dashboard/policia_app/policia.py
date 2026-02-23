@@ -11,6 +11,7 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime
 import altair as alt
+import base64
 
 # ==========================================
 # 1. CARGA DE VARIABLES Y CONFIGURACIÓN
@@ -30,13 +31,19 @@ if not API_BASE_URL:
     st.stop()
 
 # ==========================================
-# 2. ESTILO CSS (SANEADO PARA EVITAR COLAPSOS)
+# 2. ESTILO CSS (ANTI-PARPADEO EXTREMO)
 # ==========================================
 st.markdown("""
     <style>
-    /* Suavizado de scroll */
+    /* Suavizado de scroll y bloqueo de saltos de cámara */
     html, body, [data-testid="stAppViewContainer"], .main .block-container {
+        overflow-anchor: none !important;
         scroll-behavior: smooth;
+    }
+    
+    /* PETRIFICAR COLUMNAS: Evita que la página colapse su altura al refrescar el Fragmento */
+    [data-testid="column"] {
+        min-height: 650px !important;
     }
     
     .stApp { background-color: #F8F9FA; color: #212529; }
@@ -53,19 +60,27 @@ st.markdown("""
     .global-status { padding: 15px; border-radius: 8px; background-color: #1e293b; color: white; text-align: center; margin-bottom: 20px; }
     .global-status h3 { margin: 0; font-size: 2rem; }
     
+    /* AVATARES PARA LAS FOTOS */
+    .alert-profiles { display: flex; align-items: center; justify-content: flex-start; gap: 12px; margin-bottom: 10px; }
+    .alert-avatar { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; border: 2px solid #ccc; background-color: #fff;}
+    .alert-avatar.agresor { border-color: #ef4444; }
+    .alert-avatar.victima { border-color: #10b981; }
+    .alert-avatar.place { border-color: #3b82f6; }
+    
     /* Inteligencia Predictiva */
     .intel-header { border-bottom: 2px solid #003366; padding-bottom: 5px; margin-top: 30px; margin-bottom: 15px; color: #003366; }
     .intel-desc { font-size: 1rem; color: #4b5563; margin-bottom: 15px; background-color: #e2e8f0; padding: 15px; border-left: 5px solid #3b82f6; border-radius: 4px; }
     
-    /* Oculta unicamente botones que estén obsoletos para no ver "fantasmas", SIN aplastar la página */
-    button[data-stale="true"] {
-        display: none !important;
+    /* Cazafantasmas Invisible */
+    [data-stale="true"] {
+        opacity: 1 !important;
+        transition: none !important;
     }
     </style>
 """, unsafe_allow_html=True)
 
 # ==========================================
-# 3. CONEXIONES: FIRESTORE, STORAGE, BQ Y API
+# 3. CONEXIONES Y OBTENCIÓN DE DATOS
 # ==========================================
 if 'db_fs' not in st.session_state:
     try:
@@ -109,38 +124,45 @@ def obtener_datos_api():
         response = requests.get(f"{API_BASE_URL}/api/policia/dashboard_data")
         response.raise_for_status()
         data = response.json()
+        
         df_victimas = pd.DataFrame(data.get("victimas", []))
-        if not df_victimas.empty: df_victimas['nombre_completo'] = df_victimas['nombre_victima'] + " " + df_victimas['apellido_victima']
+        if not df_victimas.empty: 
+            df_victimas['nombre_completo'] = df_victimas['nombre_victima'] + " " + df_victimas['apellido_victima']
+            
         df_agresores = pd.DataFrame(data.get("agresores", []))
-        if not df_agresores.empty: df_agresores['nombre_completo'] = df_agresores['nombre_agresor'] + " " + df_agresores['apellido_agresor']
+        if not df_agresores.empty: 
+            df_agresores['nombre_completo'] = df_agresores['nombre_agresor'] + " " + df_agresores['apellido_agresor']
+            
         df_safe_places = pd.DataFrame(data.get("safe_places", []))
-        if not df_safe_places.empty: df_safe_places.rename(columns={'place_name': 'nombre'}, inplace=True)
+        if not df_safe_places.empty: 
+            df_safe_places.rename(columns={'place_name': 'nombre'}, inplace=True)
+            
         df_rel = pd.DataFrame(data.get("relaciones_agresores", []))
         df_relaciones = pd.DataFrame()
+        
         if not df_rel.empty and not df_victimas.empty and not df_agresores.empty:
-            df_relaciones = pd.merge(df_rel, df_victimas[['id_victima', 'nombre_victima', 'apellido_victima']], on='id_victima', how='left')
-            df_relaciones = pd.merge(df_relaciones, df_agresores[['id_agresor', 'nombre_agresor', 'apellido_agresor']], on='id_agresor', how='left')
+            df_relaciones = pd.merge(df_rel, df_victimas[['id_victima', 'nombre_victima', 'apellido_victima', 'url_foto_victima']], on='id_victima', how='left')
+            df_relaciones = pd.merge(df_relaciones, df_agresores[['id_agresor', 'nombre_agresor', 'apellido_agresor', 'url_foto_agresor']], on='id_agresor', how='left')
+            
         return df_victimas, df_agresores, df_relaciones, df_safe_places
     except: return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), pd.DataFrame()
 
 df_victimas, df_agresores, df_relaciones, df_safe_places = obtener_datos_api()
 
+# Diccionario de búsqueda rápida
 sql_lookup = {}
 if isinstance(df_relaciones, pd.DataFrame) and not df_relaciones.empty:
     for _, row in df_relaciones.iterrows():
         key = f"{row.get('id_victima')}_{row.get('id_agresor')}"
         sql_lookup[key] = {
+            'id_vic': str(row.get('id_victima')),
+            'id_agr': str(row.get('id_agresor')),
             'vic': f"{row.get('nombre_victima')} {row.get('apellido_victima')}",
-            'agr': f"{row.get('nombre_agresor')} {row.get('apellido_agresor')}"
+            'agr': f"{row.get('nombre_agresor')} {row.get('apellido_agresor')}",
+            'foto_vic': row.get('url_foto_victima', ''),
+            'foto_agr': row.get('url_foto_agresor', '')
         }
 place_lookup = {row['id_place']: row['nombre'] for _, row in df_safe_places.iterrows()} if not df_safe_places.empty else {}
-
-def generar_nuevo_id(df, columna, prefijo):
-    if df.empty or columna not in df.columns: return f"{prefijo}001"
-    try:
-        max_num = int(df[columna].str.extract(r'(\d+)').astype(int).max()[0])
-        return f"{prefijo}{max_num + 1:03d}"
-    except: return f"{prefijo}001"
 
 def get_coord_from_string(coord_data):
     if not coord_data: return None, None
@@ -151,6 +173,65 @@ def get_coord_from_string(coord_data):
         try: return float(coord_data[0]), float(coord_data[1])
         except: return None, None
     return None, None
+
+# ==========================================
+# 3.1 MOTOR GRÁFICO DE AVATARES INTELIGENTES
+# ==========================================
+def generar_avatar_iniciales_svg(nombre, color_hex):
+    """Crea un SVG local con las iniciales si no hay foto. 100% libre de fallos."""
+    partes = str(nombre).strip().split()
+    if len(partes) >= 2:
+        ini = (partes[0][0] + partes[1][0]).upper()
+    elif len(partes) == 1 and len(partes[0]) >= 1:
+        ini = partes[0][0:2].upper()
+    else:
+        ini = "??"
+        
+    svg = f"""<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100">
+        <circle cx="50" cy="50" r="50" fill="#{color_hex}"/>
+        <text x="50" y="50" font-family="Arial, sans-serif" font-size="40" fill="white" font-weight="bold" text-anchor="middle" dominant-baseline="central">{ini}</text>
+    </svg>"""
+    b64 = base64.b64encode(svg.encode('utf-8')).decode('utf-8')
+    return f"data:image/svg+xml;base64,{b64}"
+
+@st.cache_data(ttl=3600)
+def obtener_avatar_gcs(id_persona, nombre_persona, tipo, url_db):
+    """Usa credenciales backend para saltarse bloqueos públicos del Bucket y devuelve Base64."""
+    color_fallback = "ef4444" if tipo == "agresores" else "10b981"
+    if tipo == "places": color_fallback = "3b82f6"
+    
+    try:
+        cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "credentials.json"
+        storage_client = storage.Client.from_service_account_json(cred_path) if os.path.exists(cred_path) else storage.Client()
+        bucket = storage_client.bucket(GCS_BUCKET_NAME)
+        blob_to_download = None
+
+        # 1. Intentar usar la URL de la base de datos
+        if isinstance(url_db, str) and url_db.startswith("http") and f"{GCS_BUCKET_NAME}/" in url_db:
+            ruta_interna = url_db.split(f"{GCS_BUCKET_NAME}/")[-1]
+            blob_db = bucket.blob(ruta_interna)
+            if blob_db.exists(): blob_to_download = blob_db
+
+        # 2. Si falló, intentar buscar directamente en el bucket por el ID
+        if not blob_to_download and id_persona:
+            for ext in ['jpg', 'png', 'jpeg']:
+                ruta_intento = f"{tipo}/{id_persona}.{ext}"
+                blob_intento = bucket.blob(ruta_intento)
+                if blob_intento.exists():
+                    blob_to_download = blob_intento
+                    break
+        
+        # 3. Convertir la imagen descargada a Base64
+        if blob_to_download:
+            img_bytes = blob_to_download.download_as_bytes()
+            encoded = base64.b64encode(img_bytes).decode('utf-8')
+            mime = "image/png" if blob_to_download.name.lower().endswith('.png') else "image/jpeg"
+            return f"data:{mime};base64,{encoded}"
+            
+    except Exception: pass
+        
+    # 4. Fallback absoluto e infalible (SVG local)
+    return generar_avatar_iniciales_svg(nombre_persona, color_fallback)
 
 # ==========================================
 # 4. HEADER Y TABS
@@ -206,19 +287,28 @@ with tab_monitor:
                 
                 for doc in docs:
                     data = doc.to_dict()
-                    nombres = sql_lookup.get(doc.id, {'vic': 'Desconocido', 'agr': 'Desconocido'})
+                    # Recogemos los datos extraídos por la API
+                    nombres = sql_lookup.get(doc.id, {'vic': 'Desconocido', 'agr': 'Desconocido', 'foto_vic': '', 'foto_agr': '', 'id_vic': '', 'id_agr': ''})
                     a_lat, a_lon = get_coord_from_string(data.get('coordenadas_agresor'))
+                    
+                    # Generamos o descargamos foto agresor
+                    img_agresor = obtener_avatar_gcs(nombres['id_agr'], nombres['agr'], 'agresores', nombres['foto_agr'])
+                    clase_objetivo = 'victima'
                     
                     if data.get('alerta') == "place":
                         t_lat, t_lon = get_coord_from_string(data.get('coordenadas_place'))
-                        nombre_obj = place_lookup.get(data.get('id_place'), data.get('nombre_place', 'Zona Segura'))
+                        id_place = data.get('id_place', '000')
+                        nombre_obj = place_lookup.get(id_place, data.get('nombre_place', 'Zona Segura'))
                         icono, col = "📍", [14, 165, 233, 255]
+                        img_objetivo = obtener_avatar_gcs(id_place, "SP", 'places', "")
+                        clase_objetivo = 'place'
                     else:
                         t_lat, t_lon = get_coord_from_string(data.get('coordenadas_victima'))
                         nombre_obj, icono, col = nombres['vic'], "👤", [16, 185, 129, 255]
+                        img_objetivo = obtener_avatar_gcs(nombres['id_vic'], nombre_obj, 'victimas', nombres['foto_vic'])
 
                     if None in (a_lat, a_lon, t_lat, t_lon):
-                        feed_alertas.append({'id': doc.id, 'agr': nombres['agr'], 'obj': f"{nombre_obj} (⚠️ GPS NO DISPONIBLE)", 'icono': icono, 'dist': 0, 'nivel': "CRITICO"})
+                        feed_alertas.append({'id': doc.id, 'agr': nombres['agr'], 'obj': f"{nombre_obj} (⚠️ GPS NO DISPONIBLE)", 'icono': icono, 'dist': 0, 'nivel': "CRITICO", 'img_a': img_agresor, 'img_o': img_objetivo, 'clase_o': clase_objetivo})
                         alertas_criticas += 1
                         continue
 
@@ -232,7 +322,8 @@ with tab_monitor:
                     p_objetivos.append({'lon': t_lon, 'lat': t_lat, 'name': f"{icono} {nombre_obj}", 'color': col})
                     lineas.append({'start': [a_lon, a_lat], 'end': [t_lon, t_lat], 'color': [239, 68, 68]})
                     textos.append({'pos': [(t_lon+a_lon)/2, (t_lat+a_lat)/2], 'text': f"{int(dist)}m"})
-                    feed_alertas.append({'id': doc.id, 'agr': nombres['agr'], 'obj': nombre_obj, 'icono': icono, 'dist': dist, 'nivel': nivel})
+                    
+                    feed_alertas.append({'id': doc.id, 'agr': nombres['agr'], 'obj': nombre_obj, 'icono': icono, 'dist': dist, 'nivel': nivel, 'img_a': img_agresor, 'img_o': img_objetivo, 'clase_o': clase_objetivo})
 
                 if st.session_state.actualizar_camara:
                     lat_inicial, lon_inicial, zoom_inicial = 39.4699, -0.3763, 12
@@ -243,9 +334,7 @@ with tab_monitor:
                     st.session_state.actualizar_camara = False
 
                 with col_mapa:
-                    # 🔥 LA CLAVE ANTI-PARPADEO 2.0: El mapa vive dentro de una caja rígida de 600px.
-                    # Aunque se esté recargando por dentro, la altura total no cambia, por lo que el scroll NO salta.
-                    with st.container(height=600, border=False):
+                    with st.container(height=650, border=False):
                         st.pydeck_chart(pdk.Deck(
                             map_style="light", 
                             initial_view_state=st.session_state.map_view,
@@ -258,12 +347,24 @@ with tab_monitor:
                         ))
 
                 with col_feed:
-                    with st.container(height=600, border=False):
+                    with st.container(height=650, border=False):
                         st.markdown(f"<div class='global-status'><p>Alertas Críticas Mostradas</p><h3>{alertas_criticas}</h3></div>", unsafe_allow_html=True)
                         
                         for a in sorted(feed_alertas, key=lambda x: (x['nivel']!='CRITICO', x['dist'])):
                             cl = "alert-card critical" if a['nivel']=="CRITICO" else "alert-card"
-                            st.markdown(f"<div class='{cl}'><b>{a['agr']} ({a['id']})</b><br><small>{a['icono']} {a['obj']}</small><div class='{'dist-critical' if a['nivel']=='CRITICO' else 'dist-safe'}'>{int(a['dist'])} m</div></div>", unsafe_allow_html=True)
+                            
+                            st.markdown(f"""
+                                <div class='{cl}'>
+                                    <div class='alert-profiles'>
+                                        <img src='{a['img_a']}' class='alert-avatar agresor' title='Sujeto: {a['agr']}'>
+                                        <span style='font-size: 20px;'>➡️</span>
+                                        <img src='{a['img_o']}' class='alert-avatar {a['clase_o']}' title='Objetivo: {a['obj']}'>
+                                    </div>
+                                    <b>{a['agr']} ({a['id']})</b><br>
+                                    <small>{a['icono']} {a['obj']}</small>
+                                    <div class='{'dist-critical' if a['nivel']=='CRITICO' else 'dist-safe'}'>{int(a['dist'])} m</div>
+                                </div>
+                            """, unsafe_allow_html=True)
                             
                             if a['nivel'] == "CRITICO":
                                 if st.button("🚔 RESOLVER", key=f"res_{a['id']}"):
@@ -278,8 +379,15 @@ with tab_monitor:
     renderizar_radar_tiempo_real(alerta_seleccionada)
 
 # ------------------------------------------------------------------
-# TAB 2: GESTIÓN (RMS) - CREACIÓN Y EDICIÓN
+# TAB 2 Y 3: GESTIÓN Y BBDD (Mantenidas idénticas por seguridad)
 # ------------------------------------------------------------------
+def generar_nuevo_id(df, columna, prefijo):
+    if df.empty or columna not in df.columns: return f"{prefijo}001"
+    try:
+        max_num = int(df[columna].str.extract(r'(\d+)').astype(int).max()[0])
+        return f"{prefijo}{max_num + 1:03d}"
+    except: return f"{prefijo}001"
+
 with tab_gestion:
     opciones_gestion = ["Nuevo Agresor", "Editar Agresor", "Nueva Víctima", "Editar Víctima", "Nuevo Safe Place", "Editar Safe Place", "Vincular: Agresor - Víctima", "Vincular: Víctima - Safe Place"]
     tipo_gestion = st.selectbox("OPERACIÓN", opciones_gestion)
@@ -368,9 +476,6 @@ with tab_gestion:
                     resp = requests.post(f"{API_BASE_URL}/api/policia/relacion_victima_safe_place", json={"id_victima": v_sel.split(" - ")[0], "id_place": s_sel.split(" - ")[0]})
                     if resp.status_code == 201: st.success("Perímetro asignado."); time.sleep(1); st.rerun()
 
-# ------------------------------------------------------------------
-# TAB 3: BASE DE DATOS
-# ------------------------------------------------------------------
 with tab_bbdd:
     st.markdown("### 📊 DIRECTORIO DE VÍCTIMAS Y AGRESORES")
     col1, col2 = st.columns(2)
@@ -397,9 +502,7 @@ with tab_intel:
     @st.fragment(run_every=300)
     def renderizar_inteligencia():
         
-        # =========================================================
-        # MÓDULO: EL RADAR DE MERODEO (Tiempo de Asedio)
-        # =========================================================
+        # MÓDULO: EL RADAR DE MERODEO
         st.markdown("<h4 class='intel-header'>Medidor de Intimidación (Tiempo de Asedio / Lurking)</h4>", unsafe_allow_html=True)
         df_asedio = query_bigquery(f"SELECT * FROM `{PROJECT_ID}.{BQ_DATASET}.marts_tiempo_asedio` LIMIT 50")
         
@@ -421,9 +524,7 @@ with tab_intel:
                     st.altair_chart(chart, use_container_width=True)
         else: st.info("Recopilando telemetría de merodeo...")
 
-        # =========================================================
-        # MÓDULO: LA PLANIFICACIÓN TÁCTICA (Patrones de Interceptación)
-        # =========================================================
+        # MÓDULO: LA PLANIFICACIÓN TÁCTICA
         st.markdown("<h4 class='intel-header'>Predictor de Rutinas (Patrones de Interceptación)</h4>", unsafe_allow_html=True)
         df_patrones = query_bigquery(f"SELECT * FROM `{PROJECT_ID}.{BQ_DATASET}.marts_patrones_interceptacion` LIMIT 1000")
         
@@ -442,8 +543,7 @@ with tab_intel:
                 
             if num_cols:
                 candidatos_val = [c for c in num_cols if c != col_hora]
-                if candidatos_val:
-                    col_val = candidatos_val[0]
+                if candidatos_val: col_val = candidatos_val[0]
             
             if not col_val:
                 col_val = buscar_col(df_patrones, ['alert', 'num', 'count', 'frec', 'total', 'cantidad'], 'number')
@@ -456,14 +556,11 @@ with tab_intel:
                     y=alt.Y(f"{col_val}:Q", title='Total de Alertas Detectadas', scale=alt.Scale(zero=True)),
                     tooltip=[alt.Tooltip(f"{col_hora}:O", title="Hora"), alt.Tooltip(f"{col_val}:Q", title="Total Alertas")]
                 ).properties(height=300)
-                
                 st.altair_chart(bar_chart_horas, use_container_width=True)
             else: st.bar_chart(df_patrones) 
         else: st.info("Calculando clústeres horarios...")
 
-        # =========================================================
-        # MÓDULO: EL INFORME JUDICIAL (Acecho Premeditado)
-        # =========================================================
+        # MÓDULO: EL INFORME JUDICIAL
         st.markdown("<h4 class='intel-header'>Demostrador de Intenciones (Acecho Premeditado)</h4>", unsafe_allow_html=True)
         df_acecho = query_bigquery(f"SELECT * FROM `{PROJECT_ID}.{BQ_DATASET}.marts_acecho_premeditado` LIMIT 50")
         
@@ -488,9 +585,7 @@ with tab_intel:
             else: st.bar_chart(df_acecho)
         else: st.info("Buscando evidencias de targeting...")
 
-        # =========================================================
-        # MÓDULO: LA ALERTA TEMPRANA (Escalada de Riesgo)
-        # =========================================================
+        # MÓDULO: LA ALERTA TEMPRANA
         st.markdown("<h4 class='intel-header'>Detector de Tendencias (Escalada de Riesgo)</h4>", unsafe_allow_html=True)
         df_escalada = query_bigquery(f"SELECT * FROM `{PROJECT_ID}.{BQ_DATASET}.marts_escalada_riesgo` LIMIT 50")
         
