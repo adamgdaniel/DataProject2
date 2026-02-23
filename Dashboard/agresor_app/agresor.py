@@ -9,17 +9,11 @@ import requests
 import os
 from dotenv import load_dotenv
 
-# ==========================================
-# 1. CARGA DE VARIABLES Y CONFIGURACIÓN
-# ==========================================
 env_path = os.path.join(os.getcwd(), '.env')
 load_dotenv(env_path, override=True)
 
 st.set_page_config(page_title="App Monitorización Agresor", page_icon="📱", layout="centered")
 
-# ==========================================
-# 2. CONEXIONES (FIRESTORE Y API REST)
-# ==========================================
 
 API_AGRESORES_URL = os.getenv("API_AGRESORES_URL")
 
@@ -30,10 +24,10 @@ if not API_AGRESORES_URL:
 
 if 'db_fs' not in st.session_state:
     try:
-        # 1. Modo Local (Tu PC)
+        
         if os.path.exists("credentials.json"):
             st.session_state.db_fs = firestore.Client.from_service_account_json("credentials.json", database="firestore-database5")
-        # 2. Modo Producción (Cloud Run)
+       
         else:
             st.session_state.db_fs = firestore.Client(database="firestore-database5")
     except Exception as e:
@@ -79,9 +73,7 @@ def obtener_agresores_api():
         st.error(f"Error conectando a la API: {e}")
         return pd.DataFrame()
 
-# ==========================================
-# 3. ESTILOS CSS (CHASIS MÓVIL)
-# ==========================================
+
 st.markdown("""
 <style>
     #MainMenu, footer, header {visibility: hidden;}
@@ -100,14 +92,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 4. SONIDO
+
 def play_sound():
     js = """<script>var ctx = new (window.AudioContext || window.webkitAudioContext)(); var o = ctx.createOscillator(); var g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.value = 650; o.type = 'sawtooth'; o.start(); setTimeout(function(){o.stop();}, 300);</script>"""
     components.html(js, height=0)
 
-# ==========================================
-# 5. DATOS Y SELECCIÓN EN SIDEBAR
-# ==========================================
+
 df_agresores = obtener_agresores_api()
 
 st.sidebar.title("🛠️ Selector de Dispositivo")
@@ -132,9 +122,7 @@ else:
 st.sidebar.divider()
 st.sidebar.info(f"Visualizando terminal de: **{datos_actuales['nombre_completo']}**")
 
-# ==========================================
-# 6. LÓGICA PRINCIPAL (RENDERIZADO)
-# ==========================================
+
 if 'on' not in st.session_state: st.session_state.on = False
 
 if not st.session_state.on:
@@ -146,7 +134,7 @@ if not st.session_state.on:
 else:
     placeholder = st.empty()
     
-    # Preparamos el nombre de la víctima para mostrarlo
+    
     nombre_objetivo = datos_actuales.get('nombre_completo_victima', 'Objetivo Protegido')
     if pd.isna(nombre_objetivo) or not nombre_objetivo:
         nombre_objetivo = "Objetivo Protegido"
@@ -156,7 +144,7 @@ else:
         distancia = 0
         dir_escape = "ALEJARSE" 
         
-        # 7. LEER DATOS REALES DE FIRESTORE
+        
         if doc_id:
             try:
                 doc_ref = st.session_state.db_fs.collection("alertas").document(doc_id)

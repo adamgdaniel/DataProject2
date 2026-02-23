@@ -13,9 +13,6 @@ from datetime import datetime
 import altair as alt
 import base64
 
-# ==========================================
-# 1. CARGA DE VARIABLES Y CONFIGURACIÓN
-# ==========================================
 env_path = os.path.join(os.getcwd(), '.env')
 load_dotenv(env_path, override=True)
 
@@ -30,9 +27,6 @@ if not API_BASE_URL:
     st.error("🔒 ERROR: No se ha encontrado la variable API_BASE_URL en el entorno.")
     st.stop()
 
-# ==========================================
-# 2. ESTILO CSS (ANTI-PARPADEO EXTREMO)
-# ==========================================
 st.markdown("""
     <style>
     /* Suavizado de scroll y bloqueo de saltos de cámara */
@@ -79,9 +73,6 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# ==========================================
-# 3. CONEXIONES Y OBTENCIÓN DE DATOS
-# ==========================================
 if 'db_fs' not in st.session_state:
     try:
         cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "credentials.json"
@@ -149,7 +140,7 @@ def obtener_datos_api():
 
 df_victimas, df_agresores, df_relaciones, df_safe_places = obtener_datos_api()
 
-# Diccionario de búsqueda rápida
+
 sql_lookup = {}
 if isinstance(df_relaciones, pd.DataFrame) and not df_relaciones.empty:
     for _, row in df_relaciones.iterrows():
@@ -174,9 +165,7 @@ def get_coord_from_string(coord_data):
         except: return None, None
     return None, None
 
-# ==========================================
-# 3.1 MOTOR GRÁFICO DE AVATARES INTELIGENTES
-# ==========================================
+
 def generar_avatar_iniciales_svg(nombre, color_hex):
     """Crea un SVG local con las iniciales si no hay foto. 100% libre de fallos."""
     partes = str(nombre).strip().split()
@@ -206,13 +195,13 @@ def obtener_avatar_gcs(id_persona, nombre_persona, tipo, url_db):
         bucket = storage_client.bucket(GCS_BUCKET_NAME)
         blob_to_download = None
 
-        # 1. Intentar usar la URL de la base de datos
+    
         if isinstance(url_db, str) and url_db.startswith("http") and f"{GCS_BUCKET_NAME}/" in url_db:
             ruta_interna = url_db.split(f"{GCS_BUCKET_NAME}/")[-1]
             blob_db = bucket.blob(ruta_interna)
             if blob_db.exists(): blob_to_download = blob_db
 
-        # 2. Si falló, intentar buscar directamente en el bucket por el ID
+        
         if not blob_to_download and id_persona:
             for ext in ['jpg', 'png', 'jpeg']:
                 ruta_intento = f"{tipo}/{id_persona}.{ext}"
@@ -221,7 +210,7 @@ def obtener_avatar_gcs(id_persona, nombre_persona, tipo, url_db):
                     blob_to_download = blob_intento
                     break
         
-        # 3. Convertir la imagen descargada a Base64
+       
         if blob_to_download:
             img_bytes = blob_to_download.download_as_bytes()
             encoded = base64.b64encode(img_bytes).decode('utf-8')
@@ -230,12 +219,9 @@ def obtener_avatar_gcs(id_persona, nombre_persona, tipo, url_db):
             
     except Exception: pass
         
-    # 4. Fallback absoluto e infalible (SVG local)
+    
     return generar_avatar_iniciales_svg(nombre_persona, color_fallback)
 
-# ==========================================
-# 4. HEADER Y TABS
-# ==========================================
 col_logo, col_titulo = st.columns([3, 9], vertical_alignment="center")
 with col_logo:
     if os.path.exists("logo_policia.png"): st.image("logo_policia.png", width=450)
@@ -245,9 +231,7 @@ with col_titulo:
 
 tab_monitor, tab_gestion, tab_bbdd, tab_intel = st.tabs(["🗺️ MONITORIZACIÓN GPS", "📝 GESTIÓN (RMS)", "📊 BASE DE DATOS", "🧠 INTELIGENCIA PREDICTIVA"])
 
-# ------------------------------------------------------------------
-# TAB 1: MONITORIZACIÓN GPS
-# ------------------------------------------------------------------
+
 with tab_monitor:
     st.sidebar.markdown("### 📡 Radar Global")
     activar_streaming = st.sidebar.toggle("🔴 ACTIVAR RASTREO EN VIVO", value=False)
@@ -287,11 +271,11 @@ with tab_monitor:
                 
                 for doc in docs:
                     data = doc.to_dict()
-                    # Recogemos los datos extraídos por la API
+                    
                     nombres = sql_lookup.get(doc.id, {'vic': 'Desconocido', 'agr': 'Desconocido', 'foto_vic': '', 'foto_agr': '', 'id_vic': '', 'id_agr': ''})
                     a_lat, a_lon = get_coord_from_string(data.get('coordenadas_agresor'))
                     
-                    # Generamos o descargamos foto agresor
+                    
                     img_agresor = obtener_avatar_gcs(nombres['id_agr'], nombres['agr'], 'agresores', nombres['foto_agr'])
                     clase_objetivo = 'victima'
                     
@@ -378,9 +362,7 @@ with tab_monitor:
 
     renderizar_radar_tiempo_real(alerta_seleccionada)
 
-# ------------------------------------------------------------------
-# TAB 2 Y 3: GESTIÓN Y BBDD (Mantenidas idénticas por seguridad)
-# ------------------------------------------------------------------
+
 def generar_nuevo_id(df, columna, prefijo):
     if df.empty or columna not in df.columns: return f"{prefijo}001"
     try:
@@ -486,9 +468,6 @@ with tab_bbdd:
         st.write("AGRESORES")
         if not df_agresores.empty: st.dataframe(df_agresores[['id_agresor', 'nombre_completo']], hide_index=True)
 
-# ------------------------------------------------------------------
-# TAB 4: INTELIGENCIA PREDICTIVA (BIGQUERY) CON ALTAIR
-# ------------------------------------------------------------------
 with tab_intel:
     st.markdown("### 🧠 Central de Inteligencia y Predicción de Amenazas")
     st.write("Análisis algorítmico de telemetría GPS conectada directamente al Data Warehouse policial.")
@@ -502,7 +481,7 @@ with tab_intel:
     @st.fragment(run_every=300)
     def renderizar_inteligencia():
         
-        # MÓDULO: EL RADAR DE MERODEO
+       
         st.markdown("<h4 class='intel-header'>Medidor de Intimidación (Tiempo de Asedio / Lurking)</h4>", unsafe_allow_html=True)
         df_asedio = query_bigquery(f"SELECT * FROM `{PROJECT_ID}.{BQ_DATASET}.marts_tiempo_asedio` LIMIT 50")
         
@@ -524,7 +503,7 @@ with tab_intel:
                     st.altair_chart(chart, use_container_width=True)
         else: st.info("Recopilando telemetría de merodeo...")
 
-        # MÓDULO: LA PLANIFICACIÓN TÁCTICA
+        
         st.markdown("<h4 class='intel-header'>Predictor de Rutinas (Patrones de Interceptación)</h4>", unsafe_allow_html=True)
         df_patrones = query_bigquery(f"SELECT * FROM `{PROJECT_ID}.{BQ_DATASET}.marts_patrones_interceptacion` LIMIT 1000")
         
@@ -560,7 +539,7 @@ with tab_intel:
             else: st.bar_chart(df_patrones) 
         else: st.info("Calculando clústeres horarios...")
 
-        # MÓDULO: EL INFORME JUDICIAL
+        
         st.markdown("<h4 class='intel-header'>Demostrador de Intenciones (Acecho Premeditado)</h4>", unsafe_allow_html=True)
         df_acecho = query_bigquery(f"SELECT * FROM `{PROJECT_ID}.{BQ_DATASET}.marts_acecho_premeditado` LIMIT 50")
         
@@ -585,7 +564,7 @@ with tab_intel:
             else: st.bar_chart(df_acecho)
         else: st.info("Buscando evidencias de targeting...")
 
-        # MÓDULO: LA ALERTA TEMPRANA
+        
         st.markdown("<h4 class='intel-header'>Detector de Tendencias (Escalada de Riesgo)</h4>", unsafe_allow_html=True)
         df_escalada = query_bigquery(f"SELECT * FROM `{PROJECT_ID}.{BQ_DATASET}.marts_escalada_riesgo` LIMIT 50")
         
