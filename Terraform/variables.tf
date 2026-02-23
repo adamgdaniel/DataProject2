@@ -38,43 +38,6 @@ variable "subscription_agresores_datos"{
     type = string
     default = "agresores-datos-sub"
 }
-
-# variable "topic_policia_alertas"{
-#     description = "The name of the Pub/Sub topic for police alerts."
-#     type = string
-#     default = "policia-alertas"
-# }
-
-# variable "subscription_policia_alertas"{
-#     description = "The name of the Pub/Sub subscription for police alerts."
-#     type = string
-#     default = "policia-alertas-sub"
-# }
-
-# variable "topic_victimas_alertas"{
-#     description = "The name of the Pub/Sub topic for victim alerts."
-#     type = string
-#     default = "victimas-alertas"
-# }
-
-# variable "subscription_victimas_alertas"{
-#     description = "The name of the Pub/Sub subscription for victim alerts."
-#     type = string
-#     default = "victimas-alertas-sub"
-# }
-
-# variable "topic_agresores_alertas"{
-#     description = "The name of the Pub/Sub topic for aggressor alerts."
-#     type = string
-#     default = "agresores-alertas"
-# }
-
-# variable "subscription_agresores_alertas"{
-#     description = "The name of the Pub/Sub subscription for aggressor alerts."
-#     type = string
-#     default = "agresores-alertas-sub"
-# }
-
 variable "bucket_imagenes"{
     description = "The name of the Cloud Storage bucket for images."
     type = string
@@ -92,12 +55,6 @@ variable "firestore_collection_alertas"{
     type = string
     default = "alertas"
 }
-
-# variable "firestore_collection_safezones"{
-#     description = "The name of the Firestore collection for storing safe zone data."
-#     type = string
-#     default = "safe_zones"
-# }
 
 variable "firestore_database"{
     description = "The name of the Firestore database."
