@@ -21,3 +21,5 @@ steps:
 
 images:
   - 'europe-west6-docker.pkg.dev/$PROJECT_ID/repo-imagenes-proyecto/dbt-alertas:latest'
+options:
+  logging: CLOUD_LOGGING_ONLY
