@@ -230,13 +230,7 @@ class CargarDatosMaestros(beam.DoFn):
         except Exception as e:
             logging.error(f"❌ Error cargando DB: {e}. Forzando reintento...")
             raise e
-    
-        # Estructira devuelta de datos_maestros:
-        # { "vic_001": {
-        #       "agresores": ["ag_001", "ag_002"],  
-        #       "zonas": [
-        #           {"place_name": "Casa Alfredo", "id_place": "place_001", "place_coordinates": (39.4700, -0.3765), "radius": 300}
-
+    #aqui tenemos: { "vic_001": {"agresores": ["ag_001", "ag_002"], "zonas": [{"place_name": "Casa Alfredo", "id_place": "place_001", "place_coordinates": (39.4700, -0.3765), "radius": 300}
 
     def teardown(self):
         if self.conn:
@@ -254,7 +248,7 @@ class FormatFirestoreDocument(beam.DoFn):
         self.db = firestore.Client(project=self.project_id, database=self.database)
 
     def process(self, element):
-        #element ya es el diccionario de la alerta. Lo guardamos directo.
+        #element ya es el diccionario
         if element.get('alerta') == 'place':
             doc_id = f"{element['id_place']}_{element['id_agresor']}"
         else:
@@ -332,7 +326,7 @@ def run():
     # Configuramos save_main_session para que las funciones globales viajen a los workers
     options.view_as(SetupOptions).save_main_session = True
     
-    # Nombres de suscripciones
+
     sub_v = f"projects/{known_args.project_id}/subscriptions/{known_args.victimas_pubsub_subscription_name}"
     sub_a = f"projects/{known_args.project_id}/subscriptions/{known_args.agresores_pubsub_subscription_name}"
     firestore_database = known_args.firestore_db
@@ -355,7 +349,7 @@ def run():
             | "ParsearV" >> beam.Map(parsePubSubMessage)
             | "FormatearV" >> beam.Map(normalizeVictimas)
             | "CruzarDB" >> beam.FlatMap(cruzar_datos_en_memoria, datos_maestros=vista_datos_maestros)
-            # Sale: ('agr_001', {datos_victima})
+
         )
         agresores = (
             p 
@@ -363,7 +357,7 @@ def run():
             | "ParsearA" >> beam.Map(parsePubSubMessage)
             | "FormatearA" >> beam.Map(normalizeAgresores)
             | "ClaveAgresor" >> beam.Map(lambda x: (x['user_id'], x))
-            # Sale: ('agr_001', {datos_agresor})
+
         )
 
         # Match
@@ -371,7 +365,7 @@ def run():
             (victimas, agresores)
             | "UnirTodo" >> beam.Flatten()
             | "Ventana15s" >> beam.WindowInto(FixedWindows(15))
-            | "Agrupar" >> beam.GroupByKey() #juntamos en base a key que es el agresor id
+            | "Agrupar" >> beam.GroupByKey()
             | "Calcular" >> beam.FlatMap(detectar_match)
         )
 
