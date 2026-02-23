@@ -429,7 +429,8 @@ resource "google_project_iam_member" "dataflow_sa_roles" {
     "roles/bigquery.jobUser",
     "roles/bigquery.dataEditor",
     "roles/logging.viewer",
-    "roles/artifactregistry.reader"
+    "roles/artifactregistry.reader",
+    "roles/dataflow.developer"
   ])
   project = var.project_id
   role    = each.value
