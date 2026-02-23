@@ -60,17 +60,16 @@ if not API_BASE_URL:
 
 if 'db_fs' not in st.session_state:
     try:
-        cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "credentials.json"
-        if os.path.exists(cred_path):
-            st.session_state.db_fs = firestore.Client.from_service_account_json(
-                cred_path, database="firestore-database5"
-            )
+        # 1. Modo Local (Tu PC): Si el archivo existe, lo usa.
+        if os.path.exists("credentials.json"):
+            st.session_state.db_fs = firestore.Client.from_service_account_json("credentials.json", database="firestore-database5")
+        
+        # 2. Modo Producción (Cloud Run): Si no existe, usa la magia automática de Google.
         else:
-            # Para cuando esté en Cloud Run usando la Service Account
             st.session_state.db_fs = firestore.Client(database="firestore-database5")
+            
     except Exception as e:
         st.error(f"Error Firestore: {e}")
-        st.stop()
 
 @st.cache_data(ttl=30)
 def get_api_data():
