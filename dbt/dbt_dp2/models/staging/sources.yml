@@ -1,0 +1,13 @@
+version: 2
+
+sources:
+  - name: sistema_alertas 
+    database: data-project-streaming-487217
+    schema: analitical_dataset5
+    tables:
+      - name: alertas
+      - name: public_agresores
+      - name: public_victimas
+      - name: public_safe_places
+      - name: public_rel_victimas_agresores
+      - name: public_rel_places_victimas
