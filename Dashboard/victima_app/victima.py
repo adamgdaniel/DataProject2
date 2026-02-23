@@ -8,13 +8,13 @@ import os
 from dotenv import load_dotenv
 from datetime import datetime
 
-# 1. CARGA DE VARIABLES Y CONFIGURACIÓN
+
 env_path = os.path.join(os.getcwd(), '.env')
 load_dotenv(env_path, override=True)
 
 st.set_page_config(page_title="🛡️ Sistema de Protección", layout="wide", initial_sidebar_state="expanded")
 
-# --- CSS PROFESIONAL ---
+
 st.markdown("""
     <style>
     /* Fondo general más suave */
@@ -51,7 +51,7 @@ st.markdown("""
     </style>
 """, unsafe_allow_html=True)
 
-# 2. CONEXIONES (API Y FIRESTORE)
+
 API_BASE_URL = os.getenv("API_BASE_URL")
 
 if not API_BASE_URL:
@@ -105,7 +105,7 @@ def get_coord_from_string(coord_str):
         return float(parts[0].strip()), float(parts[1].strip())
     return 39.4699, -0.3763
 
-# 3. INTERFAZ Y SIDEBAR
+
 st.sidebar.markdown("### 🛡️ Panel de Control")
 df_relaciones = get_api_data()
 
@@ -129,7 +129,7 @@ if f'rastro_v_{doc_id}' not in st.session_state:
     st.session_state[f'rastro_v_{doc_id}'] = []
     st.session_state[f'rastro_a_{doc_id}'] = []
 
-# 4. BUCLE PRINCIPAL (TIEMPO REAL CON FIRESTORE)
+
 while True:
     try:
         doc = st.session_state.db_fs.collection("alertas").document(doc_id).get()
@@ -172,8 +172,8 @@ while True:
             mid_lon = (t_lon + a_lon) / 2
             mid_lat = (t_lat + a_lat) / 2
 
-            # --- CAPAS PYDECK ---
-            # Si hay alerta, línea roja y mostramos distancia. Si está seguro, línea verde y ocultamos distancia.
+           
+            
             color_linea = [239, 68, 68, 255] if nivel == "CRITICO" else [16, 185, 129, 255]
             texto_mapa = f"{int(dist)} m" if nivel == "CRITICO" else "" 
             
@@ -188,10 +188,10 @@ while True:
             if not es_lugar_fijo:
                 capas_mapa.insert(0, pdk.Layer("PathLayer", data=[{'path': st.session_state[f'rastro_v_{doc_id}']}], get_path="path", get_color=[16, 185, 129, 120], width_min_pixels=3))
 
-            # --- RENDERIZAR PANEL LATERAL ---
+          
             with placeholder_info.container():
                 if nivel == "CRITICO":
-                    # MAQUETACIÓN DE PELIGRO (Muestra distancia únicamente)
+                    
                     card_class = "status-card card-danger"
                     status_title = "<div class='status-title-danger'>⚠️ ALERTA DE PROXIMIDAD</div>"
                     
@@ -206,7 +206,7 @@ while True:
                         <div class="timestamp">Última lectura del radar: {datetime.now().strftime('%H:%M:%S')}</div>
                     </div>"""
                 else:
-                    # MAQUETACIÓN SEGURA (Oculta la distancia y muestra "TODO CORRECTO")
+                    
                     card_class = "status-card card-safe"
                     status_title = "<div class='status-title-safe'>✅ TODO CORRECTO</div>"
                     
@@ -223,7 +223,7 @@ while True:
 
                 st.markdown(html_content, unsafe_allow_html=True)
 
-            # --- RENDERIZAR MAPA ---
+           
             with placeholder_map.container():
                 st.pydeck_chart(pdk.Deck(
                     map_style="light",

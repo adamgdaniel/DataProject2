@@ -20,10 +20,10 @@ st.set_page_config(page_title="App Monitorización Agresor", page_icon="📱", l
 # ==========================================
 # 2. CONEXIONES (FIRESTORE Y API REST)
 # ==========================================
-# Carga la URL de tu API
+
 API_AGRESORES_URL = os.getenv("API_AGRESORES_URL")
 
-# Si no la encuentra, bloquea la app y avisa del error de seguridad
+
 if not API_AGRESORES_URL:
     st.error("🔒 ERROR DE SEGURIDAD: No se ha encontrado la variable API_AGRESORES_URL en el entorno.")
     st.stop()
@@ -48,24 +48,24 @@ def obtener_agresores_api():
         
         lista_agresores = payload.get("agresores", [])
         lista_relaciones = payload.get("relaciones_agresores", [])
-        lista_victimas = payload.get("victimas", []) # <-- NUEVO: Obtenemos las víctimas
+        lista_victimas = payload.get("victimas", []) 
         
         df_agresores = pd.DataFrame(lista_agresores)
         df_relaciones = pd.DataFrame(lista_relaciones)
-        df_victimas = pd.DataFrame(lista_victimas)   # <-- NUEVO: Creamos DataFrame
+        df_victimas = pd.DataFrame(lista_victimas)   
         
         if df_agresores.empty:
             return pd.DataFrame()
             
         df_agresores['nombre_completo'] = df_agresores['nombre_agresor'] + " " + df_agresores['apellido_agresor']
         
-        # <-- NUEVO: Creamos el nombre completo de la víctima
+        
         if not df_victimas.empty:
             df_victimas['nombre_completo_victima'] = df_victimas['nombre_victima'] + " " + df_victimas['apellido_victima']
         
         if not df_relaciones.empty:
             df_final = pd.merge(df_agresores, df_relaciones[['id_agresor', 'id_victima']], on='id_agresor', how='left')
-            # <-- NUEVO: Cruzamos también con las víctimas para traernos su nombre
+            
             if not df_victimas.empty:
                 df_final = pd.merge(df_final, df_victimas[['id_victima', 'nombre_completo_victima']], on='id_victima', how='left')
         else:
