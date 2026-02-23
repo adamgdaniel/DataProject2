@@ -1,4 +1,4 @@
-streamlit
+streamlit>=1.37.0
 pandas
 numpy
 pydeck
@@ -7,3 +7,6 @@ psycopg2-binary
 python-dotenv
 requests
 google-cloud-storage
+google-cloud-bigquery
+db-dtypes
+altair

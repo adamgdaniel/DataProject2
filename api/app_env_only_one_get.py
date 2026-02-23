@@ -221,6 +221,108 @@ def relacion_victima_safe_places():
         return jsonify({"status": "Safe Place asignado a la víctima"}), 201
     except Exception as e:
         return jsonify({"error": str(e)}), 500
+    
+# ----------------- PUT: EDICIÓN DE REGISTROS -----------------
+
+@app.route("/api/policia/editar_victima", methods=["PUT"])
+def editar_victima():
+    data = request.json
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        foto = data.get('url_foto_victima', 'vacio')
+        # Buscamos por id_victima y actualizamos el resto de campos
+        cursor.execute(
+            """UPDATE victimas 
+            SET nombre_victima = %s, apellido_victima = %s, url_foto_victima = %s 
+            WHERE id_victima = %s""",
+            (data['nombre_victima'], data['apellido_victima'], foto, data['id_victima'])
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "Víctima actualizada con éxito"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/policia/editar_agresor", methods=["PUT"])
+def editar_agresor():
+    data = request.json 
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        foto = data.get('url_foto_agresor', 'vacio')
+        cursor.execute(
+            """UPDATE agresores 
+            SET nombre_agresor = %s, apellido_agresor = %s, url_foto_agresor = %s 
+            WHERE id_agresor = %s""",
+            (data['nombre_agresor'], data['apellido_agresor'], foto, data['id_agresor'])
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "Agresor actualizado con éxito"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/policia/editar_safe_place", methods=["PUT"])
+def editar_zona_segura():
+    data = request.json 
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute(
+            """UPDATE safe_places 
+            SET place_coordinates = %s, radius = %s, place_name = %s 
+            WHERE id_place = %s""",
+            (data['place_coordinates'], data['radius'], data['place_name'], data['id_place'])
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "Safe Place actualizado"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/policia/editar_relacion_victima_agresor", methods=["PUT"])
+def editar_relacion_victima_agresor():
+    data = request.json 
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # Aquí la clave primaria está compuesta por los dos IDs, actualizamos la distancia
+        cursor.execute(
+            """UPDATE rel_victimas_agresores 
+            SET dist_seguridad = %s 
+            WHERE id_agresor = %s AND id_victima = %s""",
+            (data['dist_seguridad'], data['id_agresor'], data['id_victima'])
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "Distancia de seguridad actualizada"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+
+@app.route("/api/policia/editar_relacion_victima_safe_place", methods=["PUT"])
+def editar_relacion_victima_safe_place():
+    data = request.json 
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        # OJO AQUÍ: Como esta tabla solo tiene 2 columnas, para "editarla" necesitamos
+        # saber qué ID de lugar antiguo queremos cambiar por el nuevo.
+        cursor.execute(
+            """UPDATE rel_places_victimas 
+            SET id_place = %s 
+            WHERE id_victima = %s AND id_place = %s""",
+            (data['nuevo_id_place'], data['id_victima'], data['antiguo_id_place'])
+        )
+        conn.commit()
+        conn.close()
+        return jsonify({"status": "Safe Place modificado para la víctima"}), 200
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
 
 
 if __name__ == "__main__":
