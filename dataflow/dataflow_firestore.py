@@ -64,7 +64,7 @@ def cruzar_datos_en_memoria(datos_victima, datos_maestros):
         datos_victima['safe_zones'] = info_victima_db['zonas']
         
         for id_agresor, dist in info_victima_db['agresores'].items():
-            # Ahora datos_victima tiene: user_id, coordinates, timestamp, tipo, safe_zones Y dist_seguridad
+
             victima_datos = datos_victima.copy()
             victima_datos['dist_seguridad'] = dist           
             yield (id_agresor, victima_datos)
@@ -94,13 +94,9 @@ def calcular_direccion_escape(coords_victima, coords_agresor):
     else: return "Este"
 
 def detectar_match(elemento):
-    """
-    Recibe: ('ag_001', [lista_de_usuaros_mezclados])
-    Devuelve: [alerta1, alerta2, ...] 
-    """
+
     id_agresor, usuarios = elemento
 
-    # Separar al agresor de las víctimas
     datos_agresor = None
     victimas = []
 
@@ -230,13 +226,7 @@ class CargarDatosMaestros(beam.DoFn):
         except Exception as e:
             logging.error(f"❌ Error cargando DB: {e}. Forzando reintento...")
             raise e
-    
-        # Estructira devuelta de datos_maestros:
-        # { "vic_001": {
-        #       "agresores": ["ag_001", "ag_002"],  
-        #       "zonas": [
-        #           {"place_name": "Casa Alfredo", "id_place": "place_001", "place_coordinates": (39.4700, -0.3765), "radius": 300}
-
+    #aqui tenemos: { "vic_001": {"agresores": ["ag_001", "ag_002"], "zonas": [{"place_name": "Casa Alfredo", "id_place": "place_001", "place_coordinates": (39.4700, -0.3765), "radius": 300}
 
     def teardown(self):
         if self.conn:
@@ -254,7 +244,7 @@ class FormatFirestoreDocument(beam.DoFn):
         self.db = firestore.Client(project=self.project_id, database=self.database)
 
     def process(self, element):
-        #element ya es el diccionario de la alerta. Lo guardamos directo.
+
         if element.get('alerta') == 'place':
             doc_id = f"{element['id_place']}_{element['id_agresor']}"
         else:
@@ -324,15 +314,15 @@ def run():
     parser.add_argument('--db_pass', required=False, default="db-password-dp") 
     parser.add_argument('--db_name', required=True)
     
-    # Parseamos los argumentos
+    # Parseamos
     known_args, beam_args = parser.parse_known_args()
-    # Creamos las opciones pasándole los argumentos de Beam
+    # Pipeline Options
     options = PipelineOptions(beam_args)
     options.view_as(StandardOptions).streaming = True
-    # Configuramos save_main_session para que las funciones globales viajen a los workers
+
     options.view_as(SetupOptions).save_main_session = True
     
-    # Nombres de suscripciones
+
     sub_v = f"projects/{known_args.project_id}/subscriptions/{known_args.victimas_pubsub_subscription_name}"
     sub_a = f"projects/{known_args.project_id}/subscriptions/{known_args.agresores_pubsub_subscription_name}"
     firestore_database = known_args.firestore_db
@@ -355,7 +345,7 @@ def run():
             | "ParsearV" >> beam.Map(parsePubSubMessage)
             | "FormatearV" >> beam.Map(normalizeVictimas)
             | "CruzarDB" >> beam.FlatMap(cruzar_datos_en_memoria, datos_maestros=vista_datos_maestros)
-            # Sale: ('agr_001', {datos_victima})
+
         )
         agresores = (
             p 
@@ -363,7 +353,7 @@ def run():
             | "ParsearA" >> beam.Map(parsePubSubMessage)
             | "FormatearA" >> beam.Map(normalizeAgresores)
             | "ClaveAgresor" >> beam.Map(lambda x: (x['user_id'], x))
-            # Sale: ('agr_001', {datos_agresor})
+
         )
 
         # Match
@@ -371,7 +361,7 @@ def run():
             (victimas, agresores)
             | "UnirTodo" >> beam.Flatten()
             | "Ventana15s" >> beam.WindowInto(FixedWindows(15))
-            | "Agrupar" >> beam.GroupByKey() #juntamos en base a key que es el agresor id
+            | "Agrupar" >> beam.GroupByKey()
             | "Calcular" >> beam.FlatMap(detectar_match)
         )
 

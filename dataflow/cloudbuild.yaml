@@ -1,18 +1,18 @@
 steps:
-  # 1. Construir la imagen Docker usando tu propio Dockerfile
+#Crear imagen
   - name: 'gcr.io/cloud-builders/docker'
     dir: 'dataflow'
     id: Build Docker Image
     args: ['build', '-t', '$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA', '.']
 
-  # 2. Subir la imagen a Artifact Registry
+# Subir a artifact registry
   - name: 'gcr.io/cloud-builders/docker'
     dir: 'dataflow'
     id: Push Docker Image
     args: ['push', '$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA']
     waitFor: ['Build Docker Image']
 
-  # 3. Crear el JSON de la Flex Template apuntando a la imagen ya subida
+# Crear JSON
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     dir: 'dataflow'
@@ -24,7 +24,7 @@ steps:
     ]
     waitFor: ['Push Docker Image']
 
-  # 4. Ejecutar el Job de Dataflow
+  #job
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     dir: 'dataflow'
