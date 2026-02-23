@@ -19,7 +19,7 @@ load_dotenv(env_path, override=True)
 st.set_page_config(page_title="POLICÍA - Centro de Mando", layout="wide", page_icon="🚓")
 
 API_BASE_URL = os.getenv("API_BASE_URL")
-GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME") # Nombre de tu bucket en el .env
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
 
 if not API_BASE_URL:
     st.error("🔒 ERROR: No se ha encontrado la variable API_BASE_URL en el entorno.")
@@ -58,7 +58,6 @@ if 'db_fs' not in st.session_state:
         st.stop()
 
 def subir_imagen_gcs(file_buffer, ruta_destino):
-    """Sube una imagen al bucket de Google Cloud Storage y devuelve la URL pública"""
     if not file_buffer or not GCS_BUCKET_NAME:
         return "vacio"
     try:
@@ -70,14 +69,10 @@ def subir_imagen_gcs(file_buffer, ruta_destino):
             
         bucket = storage_client.bucket(GCS_BUCKET_NAME)
         blob = bucket.blob(ruta_destino)
-        
-        # Leemos los bytes del archivo de Streamlit y lo subimos
         blob.upload_from_string(file_buffer.getvalue(), content_type=file_buffer.type)
-        
-        # Devolvemos la URL pública generada por Google Cloud Storage
         return blob.public_url
     except Exception as e:
-        st.error(f"Error subiendo imagen al bucket: {e}")
+        st.error(f"Error subiendo imagen: {e}")
         return "vacio"
 
 @st.cache_data(ttl=15)
@@ -129,15 +124,20 @@ def generar_nuevo_id(df, columna, prefijo):
         return f"{prefijo}{int(max_num + 1):03d}"
     except: return f"{prefijo}001"
 
-def get_coord(data, field):
-    c = data.get(field)
-    if isinstance(c, list) and len(c) >= 2: return float(c[0]), float(c[1])
-    return None, None
-
-def get_coord_from_string(coord_str):
-    if isinstance(coord_str, str) and ',' in coord_str:
-        parts = coord_str.split(',')
-        return float(parts[0].strip()), float(parts[1].strip())
+# Función mejorada para extraer coordenadas de forma segura
+def get_coord_from_string(coord_data):
+    if not coord_data: return None, None
+    # Si viene como string separado por coma (ej: "39.46,-0.37")
+    if isinstance(coord_data, str) and ',' in coord_data:
+        parts = coord_data.split(',')
+        try:
+            return float(parts[0].strip()), float(parts[1].strip())
+        except: return None, None
+    # Si ya es una lista [lat, lon]
+    elif isinstance(coord_data, list) and len(coord_data) >= 2:
+        try:
+            return float(coord_data[0]), float(coord_data[1])
+        except: return None, None
     return None, None
 
 # ==========================================
@@ -152,75 +152,111 @@ with col_titulo:
 
 tab_monitor, tab_gestion, tab_bbdd = st.tabs(["🗺️ MONITORIZACIÓN GPS", "📝 GESTIÓN (RMS)", "📊 BASE DE DATOS"])
 
-# ------------------------------------------------------------------
-# TAB 1: MONITORIZACIÓN GPS
+# -# ------------------------------------------------------------------
+# TAB 1: MONITORIZACIÓN GPS (CON SELECTOR DE ALERTA)
 # ------------------------------------------------------------------
 with tab_monitor:
     st.sidebar.markdown("### 📡 Radar Global")
     activar_streaming = st.sidebar.toggle("🔴 ACTIVAR RASTREO EN VIVO", value=False)
     
+    # 1. Obtener la lista de IDs de alertas activas para el desplegable
+    lista_alertas_activas = ["🗺️ VER TODAS LAS ALERTAS"]
+    if activar_streaming:
+        try:
+            docs_previos = st.session_state.db_fs.collection("alertas").where("activa", "==", True).get()
+            for d in docs_previos:
+                lista_alertas_activas.append(d.id)
+        except: pass
+        
+    alerta_seleccionada = st.selectbox("🎯 Focalizar en Alerta Específica", lista_alertas_activas)
+    
     col_mapa, col_feed = st.columns([3, 1])
-    placeholder_map = col_mapa.empty()
-    placeholder_feed = col_feed.empty()
     
     if activar_streaming:
-        while activar_streaming:
-            try:
+        try:
+            # Si el usuario elige una en concreto...
+            if alerta_seleccionada != "🗺️ VER TODAS LAS ALERTAS":
+                doc_unico = st.session_state.db_fs.collection("alertas").document(alerta_seleccionada).get()
+                docs = [doc_unico] if doc_unico.exists and doc_unico.to_dict().get('activa') == True else []
+            else:
                 docs = st.session_state.db_fs.collection("alertas").where("activa", "==", True).stream()
-                p_agresores, p_objetivos, lineas, textos, feed_alertas = [], [], [], [], []
-                alertas_criticas = 0
                 
-                for doc in docs:
-                    data = doc.to_dict()
-                    nombres = sql_lookup.get(doc.id, {'vic': 'Desconocido', 'agr': 'Desconocido'})
-                    a_lat, a_lon = get_coord(data, 'coordenadas_agresor')
+            p_agresores, p_objetivos, lineas, textos, feed_alertas = [], [], [], [], []
+            alertas_criticas = 0
+            
+            for doc in docs:
+                data = doc.to_dict()
+                nombres = sql_lookup.get(doc.id, {'vic': 'Desconocido', 'agr': 'Desconocido'})
+                
+                a_lat, a_lon = get_coord_from_string(data.get('coordenadas_agresor'))
+                
+                if data.get('alerta') == "place":
+                    t_lat, t_lon = get_coord_from_string(data.get('coordenadas_place'))
+                    nombre_obj = place_lookup.get(data.get('id_place'), data.get('nombre_place', 'Zona Segura'))
+                    icono, col = "📍", [14, 165, 233, 255]
+                else:
+                    t_lat, t_lon = get_coord_from_string(data.get('coordenadas_victima'))
+                    nombre_obj, icono, col = nombres['vic'], "👤", [16, 185, 129, 255]
+
+                # Si faltan coordenadas, avisamos pero no rompemos el mapa
+                if None in (a_lat, a_lon, t_lat, t_lon):
+                    feed_alertas.append({
+                        'id': doc.id, 'agr': nombres['agr'], 'obj': f"{nombre_obj} (⚠️ GPS NO DISPONIBLE)", 
+                        'icono': icono, 'dist': 0, 'nivel': "CRITICO"
+                    })
+                    alertas_criticas += 1
+                    continue
+
+                try:
+                    dist = float(data.get('distancia_metros', 9999))
+                except: dist = 9999
+                
+                nivel = "CRITICO" if data.get('activa') == True else "NORMAL"
+                if nivel == "CRITICO": alertas_criticas += 1
+                
+                p_agresores.append({'lon': a_lon, 'lat': a_lat, 'name': f"Agresor: {nombres['agr']}"})
+                p_objetivos.append({'lon': t_lon, 'lat': t_lat, 'name': f"{icono} {nombre_obj}", 'color': col})
+                lineas.append({'start': [a_lon, a_lat], 'end': [t_lon, t_lat], 'color': [239, 68, 68]})
+                textos.append({'pos': [(t_lon+a_lon)/2, (t_lat+a_lat)/2], 'text': f"{int(dist)}m"})
+                feed_alertas.append({'id': doc.id, 'agr': nombres['agr'], 'obj': nombre_obj, 'icono': icono, 'dist': dist, 'nivel': nivel})
+
+            # Cámara del mapa
+            lat_inicial, lon_inicial, zoom_inicial = 39.4699, -0.3763, 12
+            if alerta_seleccionada != "🗺️ VER TODAS LAS ALERTAS" and p_agresores:
+                lat_inicial = p_agresores[0]['lat']
+                lon_inicial = p_agresores[0]['lon']
+                zoom_inicial = 15
+
+            # RENDERIZAMOS MAPA
+            with col_mapa:
+                st.pydeck_chart(pdk.Deck(map_style="light", initial_view_state=pdk.ViewState(latitude=lat_inicial, longitude=lon_inicial, zoom=zoom_inicial),
+                    layers=[pdk.Layer("LineLayer", data=lineas, get_source_position="start", get_target_position="end", get_color="color", get_width=5),
+                            pdk.Layer("ScatterplotLayer", data=p_agresores, get_position="[lon, lat]", get_fill_color=[239, 68, 68], get_radius=1, radius_min_pixels=10),
+                            pdk.Layer("ScatterplotLayer", data=p_objetivos, get_position="[lon, lat]", get_fill_color="color", get_radius=1, radius_min_pixels=10),
+                            pdk.Layer("TextLayer", data=textos, get_position="pos", get_text="text", get_size=20, get_color=[15, 23, 42, 255])]))
+
+            # RENDERIZAMOS PANEL LATERAL Y BOTONES
+            with col_feed:
+                st.markdown(f"<div class='global-status'><p>Alertas Críticas Mostradas</p><h3>{alertas_criticas}</h3></div>", unsafe_allow_html=True)
+                for a in sorted(feed_alertas, key=lambda x: (x['nivel']!='CRITICO', x['dist'])):
+                    cl = "alert-card critical" if a['nivel']=="CRITICO" else "alert-card"
+                    st.markdown(f"<div class='{cl}'><b>{a['agr']} ({a['id']})</b><br><small>{a['icono']} {a['obj']}</small><div class='{'dist-critical' if a['nivel']=='CRITICO' else 'dist-safe'}'>{int(a['dist'])} m</div></div>", unsafe_allow_html=True)
                     
-                    if data.get('alerta') == "place":
-                        t_lat, t_lon = get_coord_from_string(data.get('coordenadas_place'))
-                        nombre_obj = place_lookup.get(data.get('id_place'), data.get('nombre_place', 'Zona Segura'))
-                        icono, col = "📍", [14, 165, 233, 255]
-                    else:
-                        t_lat, t_lon = get_coord(data, 'coordenadas_victima')
-                        nombre_obj, icono, col = nombres['vic'], "👤", [16, 185, 129, 255]
+                    if st.button("🚔 RESOLVER", key=f"res_{a['id']}"):
+                        st.session_state.db_fs.collection("alertas").document(a['id']).update({"activa": False})
+                        st.toast("Alerta marcada como resuelta.")
+                        time.sleep(0.5)
+                        st.rerun()
+            
+            # --- LA CLAVE ESTÁ AQUÍ ---
+            # En lugar del while, esperamos 2 segundos y forzamos un reinicio limpio
+            time.sleep(2)
+            st.rerun()
 
-                    if None in (a_lat, a_lon, t_lat, t_lon): continue
-
-                    dist = data.get('distancia_metros', 0)
-                    nivel = "CRITICO" if dist < 500 else "NORMAL"
-                    if nivel == "CRITICO": alertas_criticas += 1
-                    
-                    p_agresores.append({'lon': a_lon, 'lat': a_lat, 'name': f"Agresor: {nombres['agr']}"})
-                    p_objetivos.append({'lon': t_lon, 'lat': t_lat, 'name': f"{icono} {nombre_obj}", 'color': col})
-                    lineas.append({'start': [a_lon, a_lat], 'end': [t_lon, t_lat], 'color': [239, 68, 68] if nivel=="CRITICO" else [245, 158, 11]})
-                    textos.append({'pos': [(t_lon+a_lon)/2, (t_lat+a_lat)/2], 'text': f"{int(dist)}m"})
-                    feed_alertas.append({'id': doc.id, 'agr': nombres['agr'], 'obj': nombre_obj, 'icono': icono, 'dist': dist, 'nivel': nivel})
-
-                with placeholder_map.container():
-                    st.pydeck_chart(pdk.Deck(map_style="light", initial_view_state=pdk.ViewState(latitude=39.4699, longitude=-0.3763, zoom=12),
-                        layers=[pdk.Layer("LineLayer", data=lineas, get_source_position="start", get_target_position="end", get_color="color", get_width=5),
-                                pdk.Layer("ScatterplotLayer", data=p_agresores, get_position="[lon, lat]", get_fill_color=[239, 68, 68], get_radius=10, radius_min_pixels=8),
-                                pdk.Layer("ScatterplotLayer", data=p_objetivos, get_position="[lon, lat]", get_fill_color="color", get_radius=10, radius_min_pixels=8),
-                                pdk.Layer("TextLayer", data=textos, get_position="pos", get_text="text", get_size=20)]))
-
-                with placeholder_feed.container():
-                    st.markdown(f"<div class='global-status'><p>Alertas Críticas Activas</p><h3>{alertas_criticas}</h3></div>", unsafe_allow_html=True)
-                    for a in sorted(feed_alertas, key=lambda x: (x['nivel']!='CRITICO', x['dist'])):
-                        with st.container():
-                            cl = "alert-card critical" if a['nivel']=="CRITICO" else "alert-card"
-                            st.markdown(f"<div class='{cl}'><b>{a['agr']}</b><br><small>{a['icono']} {a['obj']}</small><div class='{'dist-critical' if a['nivel']=='CRITICO' else 'dist-safe'}'>{int(a['dist'])} m</div></div>", unsafe_allow_html=True)
-                            
-                            if st.button("🚔 RESOLVER", key=f"res_{a['id']}"):
-                                try:
-                                    st.session_state.db_fs.collection("alertas").document(a['id']).update({"activa": False})
-                                    st.toast("Alerta marcada como resuelta.")
-                                    time.sleep(0.5); st.rerun()
-                                except Exception as e: st.error(f"Error: {e}")
-                time.sleep(2)
-            except Exception as e:
-                placeholder_feed.error(f"Error radar: {e}")
-                break
+        except Exception as e:
+            col_feed.error(f"Error radar: {e}")
     else:
-        placeholder_map.info("Active el radar en el menú lateral para iniciar la monitorización.")
+        col_mapa.info("Active el radar en el menú lateral para iniciar la monitorización.")
 
 # ------------------------------------------------------------------
 # TAB 2: GESTIÓN (RMS) - SUBIDA DE IMÁGENES
@@ -234,28 +270,13 @@ with tab_gestion:
             st.info(f"🆔 Expediente: **{id_gen}**")
             n = st.text_input("Nombre")
             a = st.text_input("Apellidos")
-            
-            # Formulario de subida de imagen
             foto_upload = st.file_uploader("Fotografía del Agresor (Opcional)", type=["jpg", "png", "jpeg"])
             
             if st.form_submit_button("GUARDAR REGISTRO"): 
-                with st.spinner("Guardando en la base de datos..."):
-                    if foto_upload:
-                        extension = foto_upload.name.split('.')[-1]
-                        # Sube al bucket y recoge la URL devuelta
-                        url_foto = subir_imagen_gcs(foto_upload, f"agresores/{id_gen}.{extension}")
-                    else:
-                        url_foto = "vacio"
-                    
-                    # Genera el payload EXACTO que espera tu API
-                    payload = {"id_agresor": id_gen, "nombre_agresor": n, "apellido_agresor": a, "url_foto_agresor": url_foto}
-                    resp = requests.post(f"{API_BASE_URL}/api/policia/nuevo_agresor", json=payload)
-                    
-                    if resp.status_code == 201: 
-                        st.success(f"Registrado con éxito.")
-                        time.sleep(1); st.rerun()
-                    else: 
-                        st.error("Error al registrar en la base de datos.")
+                with st.spinner("Guardando..."):
+                    url_foto = subir_imagen_gcs(foto_upload, f"agresores/{id_gen}.{foto_upload.name.split('.')[-1]}") if foto_upload else "vacio"
+                    resp = requests.post(f"{API_BASE_URL}/api/policia/nuevo_agresor", json={"id_agresor": id_gen, "nombre_agresor": n, "apellido_agresor": a, "url_foto_agresor": url_foto})
+                    if resp.status_code == 201: st.success("Registrado."); time.sleep(1); st.rerun()
 
     elif tipo_gestion == "Nueva Víctima":
         with st.form("f_vic"):
@@ -263,27 +284,13 @@ with tab_gestion:
             st.info(f"🆔 Expediente: **{id_gen}**")
             n = st.text_input("Nombre")
             a = st.text_input("Apellidos")
-            
-            # Formulario de subida de imagen
             foto_upload = st.file_uploader("Fotografía de la Víctima (Opcional)", type=["jpg", "png", "jpeg"])
             
             if st.form_submit_button("GUARDAR REGISTRO"): 
-                with st.spinner("Guardando en la base de datos..."):
-                    if foto_upload:
-                        extension = foto_upload.name.split('.')[-1]
-                        url_foto = subir_imagen_gcs(foto_upload, f"victimas/{id_gen}.{extension}")
-                    else:
-                        url_foto = "vacio" # Mantiene el mismo valor que muestras en Cloud SQL
-                    
-                    # Genera el payload EXACTO que espera tu API
-                    payload = {"id_victima": id_gen, "nombre_victima": n, "apellido_victima": a, "url_foto_victima": url_foto}
-                    resp = requests.post(f"{API_BASE_URL}/api/policia/nueva_victima", json=payload)
-                    
-                    if resp.status_code == 201: 
-                        st.success(f"Registrada con éxito.")
-                        time.sleep(1); st.rerun()
-                    else: 
-                        st.error("Error al registrar en la base de datos.")
+                with st.spinner("Guardando..."):
+                    url_foto = subir_imagen_gcs(foto_upload, f"victimas/{id_gen}.{foto_upload.name.split('.')[-1]}") if foto_upload else "vacio"
+                    resp = requests.post(f"{API_BASE_URL}/api/policia/nueva_victima", json={"id_victima": id_gen, "nombre_victima": n, "apellido_victima": a, "url_foto_victima": url_foto})
+                    if resp.status_code == 201: st.success("Registrada."); time.sleep(1); st.rerun()
 
     elif tipo_gestion == "Nuevo Safe Place":
         with st.form("f_sp"):
@@ -293,8 +300,7 @@ with tab_gestion:
             coord = st.text_input("Coordenadas (Lat, Lon)", "39.4699, -0.3763")
             rad = st.number_input("Radio de seguridad (metros)", value=500)
             if st.form_submit_button("GUARDAR"): 
-                payload = {"id_place": id_gen, "place_coordinates": coord, "radius": rad, "place_name": n}
-                resp = requests.post(f"{API_BASE_URL}/api/policia/nuevo_safe_place", json=payload)
+                resp = requests.post(f"{API_BASE_URL}/api/policia/nuevo_safe_place", json={"id_place": id_gen, "place_coordinates": coord, "radius": rad, "place_name": n})
                 if resp.status_code == 201: st.success("Lugar registrado."); time.sleep(1); st.rerun()
 
     elif tipo_gestion == "Vincular: Agresor - Víctima":
@@ -304,13 +310,8 @@ with tab_gestion:
                 v_sel = st.selectbox("Víctima a proteger", df_victimas['id_victima'] + " - " + df_victimas['nombre_completo'])
                 dist = st.number_input("Distancia de seguridad mínima (m)", value=500)
                 if st.form_submit_button("VINCULAR ORDEN"):
-                    id_agr = a_sel.split(" - ")[0]
-                    id_vic = v_sel.split(" - ")[0]
-                    payload = {"id_agresor": id_agr, "id_victima": id_vic, "dist_seguridad": dist}
-                    resp = requests.post(f"{API_BASE_URL}/api/policia/relacion_victima_agresor", json=payload)
-                    if resp.status_code == 201: st.success("Orden de alejamiento registrada."); time.sleep(1); st.rerun()
-            else:
-                st.warning("Faltan datos de víctimas o agresores.")
+                    resp = requests.post(f"{API_BASE_URL}/api/policia/relacion_victima_agresor", json={"id_agresor": a_sel.split(" - ")[0], "id_victima": v_sel.split(" - ")[0], "dist_seguridad": dist})
+                    if resp.status_code == 201: st.success("Orden registrada."); time.sleep(1); st.rerun()
 
     elif tipo_gestion == "Vincular: Víctima - Safe Place":
         with st.form("f_vinc_sp"):
@@ -318,16 +319,11 @@ with tab_gestion:
                 v_sel = st.selectbox("Víctima Protegida", df_victimas['id_victima'] + " - " + df_victimas['nombre_completo'])
                 s_sel = st.selectbox("Lugar Seguro", df_safe_places['id_place'] + " - " + df_safe_places['nombre'])
                 if st.form_submit_button("ESTABLECER PERÍMETRO"):
-                    id_vic = v_sel.split(" - ")[0]
-                    id_plc = s_sel.split(" - ")[0]
-                    payload = {"id_victima": id_vic, "id_place": id_plc}
-                    resp = requests.post(f"{API_BASE_URL}/api/policia/relacion_victima_safe_place", json=payload)
+                    resp = requests.post(f"{API_BASE_URL}/api/policia/relacion_victima_safe_place", json={"id_victima": v_sel.split(" - ")[0], "id_place": s_sel.split(" - ")[0]})
                     if resp.status_code == 201: st.success("Perímetro asignado."); time.sleep(1); st.rerun()
-            else:
-                st.warning("Faltan datos.")
 
 # ------------------------------------------------------------------
-# TAB 3: BASE DE DATOS (VIA API Y BIGQUERY)
+# TAB 3: BASE DE DATOS
 # ------------------------------------------------------------------
 with tab_bbdd:
     st.markdown("### 📊 DIRECTORIO DE VÍCTIMAS Y AGRESORES")
@@ -338,7 +334,6 @@ with tab_bbdd:
     with col2:
         st.write("AGRESORES")
         if not df_agresores.empty: st.dataframe(df_agresores[['id_agresor', 'nombre_completo', 'url_foto_agresor']], hide_index=True)
-    
     st.divider()
     st.markdown("### 🛡️ ÓRDENES DE ALEJAMIENTO ACTIVAS")
     if not df_relaciones.empty: st.dataframe(df_relaciones, use_container_width=True, hide_index=True)
