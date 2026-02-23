@@ -9,31 +9,25 @@ import requests
 import os
 from dotenv import load_dotenv
 
-# ==========================================
-# 1. CARGA DE VARIABLES Y CONFIGURACIÓN
-# ==========================================
 env_path = os.path.join(os.getcwd(), '.env')
 load_dotenv(env_path, override=True)
 
 st.set_page_config(page_title="App Monitorización Agresor", page_icon="📱", layout="centered")
 
-# ==========================================
-# 2. CONEXIONES (FIRESTORE Y API REST)
-# ==========================================
-# Carga la URL de tu API
+
 API_AGRESORES_URL = os.getenv("API_AGRESORES_URL")
 
-# Si no la encuentra, bloquea la app y avisa del error de seguridad
+
 if not API_AGRESORES_URL:
     st.error("🔒 ERROR DE SEGURIDAD: No se ha encontrado la variable API_AGRESORES_URL en el entorno.")
     st.stop()
 
 if 'db_fs' not in st.session_state:
     try:
-        # 1. Modo Local (Tu PC)
+        
         if os.path.exists("credentials.json"):
             st.session_state.db_fs = firestore.Client.from_service_account_json("credentials.json", database="firestore-database5")
-        # 2. Modo Producción (Cloud Run)
+       
         else:
             st.session_state.db_fs = firestore.Client(database="firestore-database5")
     except Exception as e:
@@ -48,24 +42,24 @@ def obtener_agresores_api():
         
         lista_agresores = payload.get("agresores", [])
         lista_relaciones = payload.get("relaciones_agresores", [])
-        lista_victimas = payload.get("victimas", []) # <-- NUEVO: Obtenemos las víctimas
+        lista_victimas = payload.get("victimas", []) 
         
         df_agresores = pd.DataFrame(lista_agresores)
         df_relaciones = pd.DataFrame(lista_relaciones)
-        df_victimas = pd.DataFrame(lista_victimas)   # <-- NUEVO: Creamos DataFrame
+        df_victimas = pd.DataFrame(lista_victimas)   
         
         if df_agresores.empty:
             return pd.DataFrame()
             
         df_agresores['nombre_completo'] = df_agresores['nombre_agresor'] + " " + df_agresores['apellido_agresor']
         
-        # <-- NUEVO: Creamos el nombre completo de la víctima
+        
         if not df_victimas.empty:
             df_victimas['nombre_completo_victima'] = df_victimas['nombre_victima'] + " " + df_victimas['apellido_victima']
         
         if not df_relaciones.empty:
             df_final = pd.merge(df_agresores, df_relaciones[['id_agresor', 'id_victima']], on='id_agresor', how='left')
-            # <-- NUEVO: Cruzamos también con las víctimas para traernos su nombre
+            
             if not df_victimas.empty:
                 df_final = pd.merge(df_final, df_victimas[['id_victima', 'nombre_completo_victima']], on='id_victima', how='left')
         else:
@@ -79,9 +73,7 @@ def obtener_agresores_api():
         st.error(f"Error conectando a la API: {e}")
         return pd.DataFrame()
 
-# ==========================================
-# 3. ESTILOS CSS (CHASIS MÓVIL)
-# ==========================================
+
 st.markdown("""
 <style>
     #MainMenu, footer, header {visibility: hidden;}
@@ -100,14 +92,12 @@ st.markdown("""
 </style>
 """, unsafe_allow_html=True)
 
-# 4. SONIDO
+
 def play_sound():
     js = """<script>var ctx = new (window.AudioContext || window.webkitAudioContext)(); var o = ctx.createOscillator(); var g = ctx.createGain(); o.connect(g); g.connect(ctx.destination); o.frequency.value = 650; o.type = 'sawtooth'; o.start(); setTimeout(function(){o.stop();}, 300);</script>"""
     components.html(js, height=0)
 
-# ==========================================
-# 5. DATOS Y SELECCIÓN EN SIDEBAR
-# ==========================================
+
 df_agresores = obtener_agresores_api()
 
 st.sidebar.title("🛠️ Selector de Dispositivo")
@@ -132,9 +122,7 @@ else:
 st.sidebar.divider()
 st.sidebar.info(f"Visualizando terminal de: **{datos_actuales['nombre_completo']}**")
 
-# ==========================================
-# 6. LÓGICA PRINCIPAL (RENDERIZADO)
-# ==========================================
+
 if 'on' not in st.session_state: st.session_state.on = False
 
 if not st.session_state.on:
@@ -146,7 +134,7 @@ if not st.session_state.on:
 else:
     placeholder = st.empty()
     
-    # Preparamos el nombre de la víctima para mostrarlo
+    
     nombre_objetivo = datos_actuales.get('nombre_completo_victima', 'Objetivo Protegido')
     if pd.isna(nombre_objetivo) or not nombre_objetivo:
         nombre_objetivo = "Objetivo Protegido"
@@ -156,7 +144,7 @@ else:
         distancia = 0
         dir_escape = "ALEJARSE" 
         
-        # 7. LEER DATOS REALES DE FIRESTORE
+        
         if doc_id:
             try:
                 doc_ref = st.session_state.db_fs.collection("alertas").document(doc_id)

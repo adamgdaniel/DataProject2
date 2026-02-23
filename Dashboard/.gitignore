@@ -1,4 +1,3 @@
-# Archivos de entorno y secretos (¡MUY IMPORTANTE!)
 .env
 credentials.json
 tu-archivo-credenciales.json
