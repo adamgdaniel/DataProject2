@@ -20,7 +20,7 @@ st.set_page_config(page_title="App Monitorización Agresor", page_icon="📱", l
 # ==========================================
 # 2. CONEXIONES (FIRESTORE Y API REST)
 # ==========================================
-# Carga la URL de tu API (ej: http://127.0.0.1:8080/api/policia/dashboard_data)
+# Carga la URL de tu API
 API_AGRESORES_URL = os.getenv("API_AGRESORES_URL")
 
 # Si no la encuentra, bloquea la app y avisa del error de seguridad
@@ -30,39 +30,38 @@ if not API_AGRESORES_URL:
 
 if 'db_fs' not in st.session_state:
     try:
-        cred_path = os.getenv("GOOGLE_APPLICATION_CREDENTIALS") or "credentials.json"
-        st.session_state.db_fs = firestore.Client.from_service_account_json(cred_path, database="firestore-database5")
+        # 1. Modo Local (Tu PC)
+        if os.path.exists("credentials.json"):
+            st.session_state.db_fs = firestore.Client.from_service_account_json("credentials.json", database="firestore-database5")
+        # 2. Modo Producción (Cloud Run)
+        else:
+            st.session_state.db_fs = firestore.Client(database="firestore-database5")
     except Exception as e:
         st.error(f"Error Firestore: {e}")
 
-@st.cache_data(ttl=30) # Recarga los datos de la API cada 30 segundos
+@st.cache_data(ttl=30)
 def obtener_agresores_api():
     try:
-        # 1. Hacemos la llamada a tu API gigante
         response = requests.get(API_AGRESORES_URL)
         response.raise_for_status()
         payload = response.json()
         
-        # 2. Extraemos las listas que nos interesan
         lista_agresores = payload.get("agresores", [])
         lista_relaciones = payload.get("relaciones_agresores", [])
         
-        # 3. Convertimos a DataFrames de Pandas
         df_agresores = pd.DataFrame(lista_agresores)
         df_relaciones = pd.DataFrame(lista_relaciones)
         
         if df_agresores.empty:
             return pd.DataFrame()
             
-        # Creamos el nombre completo
         df_agresores['nombre_completo'] = df_agresores['nombre_agresor'] + " " + df_agresores['apellido_agresor']
         
-        # 4. Cruzamos los datos (LEFT JOIN) para pegarle el 'id_victima' a cada agresor
         if not df_relaciones.empty:
             df_final = pd.merge(df_agresores, df_relaciones[['id_agresor', 'id_victima']], on='id_agresor', how='left')
         else:
             df_final = df_agresores
-            df_final['id_victima'] = None # Si no hay relaciones, lo dejamos vacío
+            df_final['id_victima'] = None 
             
         return df_final
         
@@ -110,7 +109,6 @@ if not df_agresores.empty:
     )
     datos_actuales = df_agresores[df_agresores['nombre_completo'] == agresor_seleccionado].iloc[0]
     
-    # Construir el ID del documento para Firestore (ej: vic_001_agr_001)
     if pd.isna(datos_actuales.get('id_victima')):
         doc_id = None
         st.sidebar.warning("⚠️ Este sujeto no tiene ninguna orden de alejamiento vinculada en este momento.")
@@ -141,6 +139,7 @@ else:
     while True:
         es_alerta = False
         distancia = 0
+        dir_escape = "ALEJARSE" 
         
         # 7. LEER DATOS REALES DE FIRESTORE
         if doc_id:
@@ -150,13 +149,25 @@ else:
                 
                 if doc.exists:
                     data_fs = doc.to_dict()
-                    distancia = data_fs.get('distancia_metros', 9999)
-                    nivel = data_fs.get('nivel', 'NORMAL')
                     
-                    if nivel == 'CRITICO' or distancia < 500:
+                    # Para seguir mostrando la distancia en la pantalla (aunque no se use para activar la alerta)
+                    try:
+                        distancia = float(data_fs.get('distancia_metros', 9999))
+                    except (ValueError, TypeError):
+                        distancia = 9999
+                        
+                    dir_escape = data_fs.get('direccion_escape', 'ALEJARSE')
+                    
+                    # NUEVA LÓGICA: Leemos directamente el booleano 'activa'
+                    alerta_activa = data_fs.get('activa', False)
+                    
+                    if alerta_activa == True:
                         es_alerta = True
+                else:
+                    st.warning(f"No se encuentra el documento '{doc_id}' en Firestore.")
+                    
             except Exception as e:
-                pass 
+                st.error(f"Error interno leyendo la alerta: {e}")
 
         hora = datetime.now().strftime("%H:%M")
         bat = 78
@@ -177,7 +188,7 @@ else:
                             <div style="background:rgba(0,0,0,0.3); padding:15px; margin:20px; border-radius:10px; border:2px solid #ffcc00;">
                                 <strong style="color:#ffcc00;">ACCIÓN REQUERIDA</strong><br>
                                 Su posición ha sido reportada.<br>Aléjese inmediatamente.<br>
-                                <span style="font-size:35px; font-weight:bold;">NORTE ⬆</span><br>
+                                <span style="font-size:35px; font-weight:bold;">{dir_escape}</span><br>
                                 <small>Distancia al objetivo: {int(distancia)}m</small>
                             </div>
                         </div>
