@@ -1,5 +1,6 @@
 steps:
   - name: 'gcr.io/cloud-builders/docker'
+    dir: 'dbt/dp2'
     args: [
       'build', 
       '-t', 'europe-west6-docker.pkg.dev/$PROJECT_ID/repo-imagenes-proyecto/dbt-alertas:$COMMIT_SHA', 
