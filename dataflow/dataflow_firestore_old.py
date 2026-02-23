@@ -9,6 +9,7 @@ import json
 import os
 import argparse
 from geopy.distance import geodesic
+import psycopg2 
 from google.cloud import firestore
 import math
 from dotenv import load_dotenv
@@ -29,6 +30,10 @@ def parsePubSubMessage(message):
         logging.error(f"Error parsing message: {e}")
         return None
 
+def jsonEncode(elemento):
+    mensaje_str = json.dumps(elemento)
+
+    return mensaje_str.encode('utf-8')
 
 def normalizeVictimas(event):
     coords = event["coordinates"]
@@ -197,7 +202,7 @@ class CargarDatosMaestros(beam.DoFn):
 
         #Cargar Agrersores-victimas
         try:
-    
+                    # --- 1. Cargar Agresores-Víctimas ---
             cursor.execute("SELECT id_victima, id_agresor, dist_seguridad FROM rel_victimas_agresores")
             for vic, agr, dist in cursor.fetchall():
                 vic, agr = str(vic).strip(), str(agr).strip()
@@ -228,14 +233,14 @@ class CargarDatosMaestros(beam.DoFn):
             yield datos_maestros
 
         except Exception as e:
-            logging.error(f"❌ Error cargando DB: {e}. Forzando reintento...")
-            raise e
+            logging.error(f"❌ Error cargando DB: {e}")
+            yield {}
     
         # Estructira devuelta de datos_maestros:
         # { "vic_001": {
         #       "agresores": ["ag_001", "ag_002"],  
         #       "zonas": [
-        #           {"place_name": "Casa Alfredo", "id_place": "place_001", "place_coordinates": (39.4700, -0.3765), "radius": 300}
+        #           {"place_name": "Comisaría Centro", "id_place": "place_001", "place_coordinates": (39.4700, -0.3765), "radius": 300}
 
 
     def teardown(self):
@@ -250,15 +255,13 @@ class FormatFirestoreDocument(beam.DoFn):
         self.database = firestore_database
 
     def setup(self):
+        # Se ejecuta 1 vez al arrancar el worker
         from google.cloud import firestore
         self.db = firestore.Client(project=self.project_id, database=self.database)
 
     def process(self, element):
-        #element ya es el diccionario de la alerta. Lo guardamos directo.
-        if element.get('alerta') == 'place':
-            doc_id = f"{element['id_place']}_{element['id_agresor']}"
-        else:
-            doc_id = f"{element['id_victima']}_{element['id_agresor']}"
+        # element ya es el diccionario de la alerta. Lo guardamos directo.
+        doc_id = f"{element['id_victima']}_{element['id_agresor']}"
         try:
             self.db.collection(self.collection).document(doc_id).set(element, merge=True)
         except Exception as e:
@@ -267,6 +270,7 @@ class FormatFirestoreDocument(beam.DoFn):
         yield element  
 
     def teardown(self):
+        # Cierra la conexión al apagar
         if hasattr(self, 'db'):
             self.db.close()
 
