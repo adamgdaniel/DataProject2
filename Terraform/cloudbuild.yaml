@@ -21,13 +21,12 @@ steps:
       '--region', 'europe-west6'
     ]
 
-  # 4. Ejecutar el Job inmediatamente para aplicar los cambios en la DB
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args: [
       'run', 'jobs', 'execute', 'crear-tablas',
       '--region', 'europe-west6',
-      '--wait' # Esperar a que termine para marcar el build como exitoso
+      '--wait'
     ]
 
 options:

@@ -4,7 +4,6 @@ dbt_dp2:
       dataset: analitical_dataset5
       job_execution_timeout_seconds: 300
       job_retries: 1
-      #keyfile: key.json
       location: europe-west6
       method: oauth
       priority: interactive

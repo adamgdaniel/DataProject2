@@ -14,7 +14,7 @@ SELECT
     
     IF(
         COUNTIF(DATE(minuto_alerta) >= DATE_SUB(CURRENT_DATE(), INTERVAL 7 DAY)) > 
-        (COUNTIF(DATE(minuto_alerta) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 37 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 8 DAY)) / 4), -- Dividimos entre 4 para comparar 1 semana vs media semanal del mes pasado
+        (COUNTIF(DATE(minuto_alerta) BETWEEN DATE_SUB(CURRENT_DATE(), INTERVAL 37 DAY) AND DATE_SUB(CURRENT_DATE(), INTERVAL 8 DAY)) / 4),
         TRUE, 
         FALSE
     ) AS escalada_detectada_flag

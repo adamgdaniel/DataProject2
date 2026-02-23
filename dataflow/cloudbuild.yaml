@@ -1,18 +1,15 @@
 steps:
-#Crear imagen
   - name: 'gcr.io/cloud-builders/docker'
     dir: 'dataflow'
     id: Build Docker Image
     args: ['build', '-t', '$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA', '.']
 
-# Subir a artifact registry
   - name: 'gcr.io/cloud-builders/docker'
     dir: 'dataflow'
     id: Push Docker Image
     args: ['push', '$_REGION_ID-docker.pkg.dev/$PROJECT_ID/$_ARTIFACT_REGISTRY_REPOSITORY/$_ARTIFACT_REGISTRY_IMAGE_NAME:$COMMIT_SHA']
     waitFor: ['Build Docker Image']
 
-# Crear JSON
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     dir: 'dataflow'
@@ -24,7 +21,6 @@ steps:
     ]
     waitFor: ['Push Docker Image']
 
-  #job
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     dir: 'dataflow'
