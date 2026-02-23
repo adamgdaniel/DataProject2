@@ -48,20 +48,30 @@ def obtener_agresores_api():
         
         lista_agresores = payload.get("agresores", [])
         lista_relaciones = payload.get("relaciones_agresores", [])
+        lista_victimas = payload.get("victimas", []) # <-- NUEVO: Obtenemos las víctimas
         
         df_agresores = pd.DataFrame(lista_agresores)
         df_relaciones = pd.DataFrame(lista_relaciones)
+        df_victimas = pd.DataFrame(lista_victimas)   # <-- NUEVO: Creamos DataFrame
         
         if df_agresores.empty:
             return pd.DataFrame()
             
         df_agresores['nombre_completo'] = df_agresores['nombre_agresor'] + " " + df_agresores['apellido_agresor']
         
+        # <-- NUEVO: Creamos el nombre completo de la víctima
+        if not df_victimas.empty:
+            df_victimas['nombre_completo_victima'] = df_victimas['nombre_victima'] + " " + df_victimas['apellido_victima']
+        
         if not df_relaciones.empty:
             df_final = pd.merge(df_agresores, df_relaciones[['id_agresor', 'id_victima']], on='id_agresor', how='left')
+            # <-- NUEVO: Cruzamos también con las víctimas para traernos su nombre
+            if not df_victimas.empty:
+                df_final = pd.merge(df_final, df_victimas[['id_victima', 'nombre_completo_victima']], on='id_victima', how='left')
         else:
             df_final = df_agresores
             df_final['id_victima'] = None 
+            df_final['nombre_completo_victima'] = None
             
         return df_final
         
@@ -136,6 +146,11 @@ if not st.session_state.on:
 else:
     placeholder = st.empty()
     
+    # Preparamos el nombre de la víctima para mostrarlo
+    nombre_objetivo = datos_actuales.get('nombre_completo_victima', 'Objetivo Protegido')
+    if pd.isna(nombre_objetivo) or not nombre_objetivo:
+        nombre_objetivo = "Objetivo Protegido"
+    
     while True:
         es_alerta = False
         distancia = 0
@@ -150,15 +165,12 @@ else:
                 if doc.exists:
                     data_fs = doc.to_dict()
                     
-                    # Para seguir mostrando la distancia en la pantalla (aunque no se use para activar la alerta)
                     try:
                         distancia = float(data_fs.get('distancia_metros', 9999))
                     except (ValueError, TypeError):
                         distancia = 9999
                         
                     dir_escape = data_fs.get('direccion_escape', 'ALEJARSE')
-                    
-                    # NUEVA LÓGICA: Leemos directamente el booleano 'activa'
                     alerta_activa = data_fs.get('activa', False)
                     
                     if alerta_activa == True:
@@ -187,7 +199,8 @@ else:
                             <p style="font-size:14px; color:#ffcccc;">Usuario: {datos_actuales['nombre_completo']}</p>
                             <div style="background:rgba(0,0,0,0.3); padding:15px; margin:20px; border-radius:10px; border:2px solid #ffcc00;">
                                 <strong style="color:#ffcc00;">ACCIÓN REQUERIDA</strong><br>
-                                Su posición ha sido reportada.<br>Aléjese inmediatamente.<br>
+                                Su posición ha sido reportada.<br>Aléjese inmediatamente de:<br>
+                                <span style="font-size:20px; font-weight:bold; color:white;">{nombre_objetivo}</span><br><br>
                                 <span style="font-size:35px; font-weight:bold;">{dir_escape}</span><br>
                                 <small>Distancia al objetivo: {int(distancia)}m</small>
                             </div>
